@@ -1,0 +1,18 @@
+node_modules/
+.DS_Store
+
+# Defense in depth. Nothing of these types has ever been committed and none is
+# needed to build.
+.env
+.env.*
+*.pem
+*.p12
+*.key
+*.crx
+*.zip
+
+# Built recovery-tool artifact. Reproducible from source at a release tag, so
+# the bytes are published as a release asset rather than committed — a binary
+# in the tree would be a second, unverifiable source of truth for what the
+# published digest names.
+recovery/dist/

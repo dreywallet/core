@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "marketplace": "satflow",
+  "upstreamVersion": "1.1.4-prod",
+  "network": "mainnet",
+  "publicClientEvidence": {
+    "accessedAt": "2026-07-22",
+    "deploymentId": "dpl_J6miRMRmAJFfov5bPLizDSw1n9Fm",
+    "chunkUrl": "https://www.satflow.com/_next/static/chunks/app/(app)/layout-f21fade1010fd70e.js",
+    "status": "corroborating-current-client-evidence-not-a-vendor-contract"
+  },
+  "contracts": [
+    {
+      "action": "list",
+      "endpoint": "/intent/sell",
+      "submitEndpoint": "/list",
+      "intentRequired": ["price", "sellerOrdAddress", "sellerReceiveAddress"],
+      "intentResponseSchema": "guide-only-field-names-no-exact-shapes",
+      "intentResponseFields": ["unsignedListingPSBTBase64", "secureListingPSBTs"],
+      "submitRequired": ["listings", "signedListingPSBT", "signedSecureListingPSBTs"],
+      "submitResponseFields": ["success", "data.txid", "data.listings"],
+      "publicClientProcedures": ["createPsbt.listings", "submitPsbt.createListings"],
+      "publicClientIntentRequired": ["listings", "sellerPaymentAddress", "sellerPaymentPublicKey"],
+      "publicClientIntentResponsePaths": [
+        "seller.indicesToSign",
+        "seller.unsignedListingPSBTBase64",
+        "seller.unsignedListingPSBTHex",
+        "seller.secureListingPSBTs[].sigHash",
+        "seller.secureListingPSBTs[].indicesToSign"
+      ],
+      "publicClientSubmitRequired": [
+        "listings",
+        "signedListingPSBT",
+        "signedSecureListingPSBTs",
+        "skipBroadcast",
+        "sellerPaymentAddress",
+        "sellerPaymentPublicKey"
+      ],
+      "publicClientSubmitResponsePaths": [
+        "compactListingPsbts[].indicesToSign"
+      ],
+      "publicClientStages": [
+        "seller-listing-single-anyonecanpay",
+        "zero-or-more-secure-listing-server-specified-sighash",
+        "optional-compact-listing-payment-single-anyonecanpay"
+      ],
+      "sellerSighash": 131,
+      "secureSellerSighash": 129,
+      "broadcaster": "site",
+      "localTemplateGap": "optional compact payment-key listing PSBT is not represented by the two-step fixture template",
+      "status": "public-client-corroborated-shapes-vendor-contract-and-compact-stage-blocked"
+    },
+    {
+      "action": "secure_buy",
+      "endpoint": "/intent/secure-purchase",
+      "broadcastEndpoint": "/purchase/broadcast",
+      "intentRequired": ["buyerAddress", "buyerTokenReceiveAddress"],
+      "intentResponseSchema": "partial-only-referral-fields",
+      "broadcastRequired": ["buyerAddress", "buyerTokenReceiveAddress", "buyerTokenReceivePublicKey", "feeRate"],
+      "broadcastResponseFields": ["success", "data.fillTx", "data.unsignedExtractionPSBTBase64", "data.unsignedExtractionPSBTHex"],
+      "stages": ["preparation", "purchase", "transfer", "extraction"],
+      "publicClientProcedures": ["createPsbt.securePurchase", "broadcastPsbt.purchase"],
+      "publicClientStages": ["prepare", "purchase", "compact", "transfer"],
+      "publicClientBroadcastRequired": [
+        "buyerAddress",
+        "buyerTokenReceiveAddress",
+        "buyerTokenReceivePublicKey",
+        "buyerPublicKey",
+        "feeRate",
+        "signedSecurePaymentPrepPSBTs",
+        "signedSecurePurchasePSBTs",
+        "signedSecureTransferPSBT",
+        "signedCompactPurchasePSBTs",
+        "securePurchase",
+        "skipBroadcast"
+      ],
+      "publicClientBroadcastResponsePaths": ["fillTx", "recoveryPsbtBase64"],
+      "broadcaster": "site",
+      "localTemplateGap": "compact is an optional purchase-stage variant and public client evidence does not establish every response schema or stage-selection invariant",
+      "status": "public-client-corroborated-workflow-vendor-contract-blocked"
+    },
+    {
+      "action": "buy",
+      "endpoint": "/intent/satflow-purchase",
+      "broadcastEndpoint": "/purchase/broadcast",
+      "intentRequired": ["buyerAddress", "buyerTokenReceiveAddress", "feeRate", "extractionFeeRate"],
+      "intentResponseSchema": "not-documented-by-upstream",
+      "broadcastRequired": ["buyerAddress", "buyerTokenReceiveAddress", "buyerTokenReceivePublicKey", "feeRate"],
+      "broadcastResponseFields": ["success", "data.fillTx", "data.unsignedExtractionPSBTBase64", "data.unsignedExtractionPSBTHex"],
+      "publicClientProcedures": ["createPsbt.satflowPurchase", "broadcastPsbt.purchase"],
+      "publicClientIntentRequired": [
+        "buyerAddress",
+        "buyerPublicKey",
+        "buyerTokenReceiveAddress",
+        "buyerTokenReceivePublicKey",
+        "allowedPaymentOutpoints",
+        "feeRate",
+        "extractionFeeRate"
+      ],
+      "publicClientBroadcastResponsePaths": ["fillTx", "unsignedExtractionPSBTBase64", "unsignedExtractionPSBTHex"],
+      "broadcaster": "site",
+      "status": "public-client-corroborated-workflow-vendor-contract-blocked"
+    },
+    {
+      "action": "cancel",
+      "challengeEndpoint": "/challenge",
+      "challengeVerifyEndpoint": "/challenge/verify",
+      "endpoint": "/cancel",
+      "required": ["makerAddress", "orderType", "signature"],
+      "orderType": "ask",
+      "signatureProtocol": "BIP322-generic",
+      "challengeResponseFields": ["success", "data.challenge"],
+      "responseFields": ["success", "data.success", "data.summary", "data.successCount", "data.failedCount"],
+      "publicClientProcedure": "orders.cancel",
+      "publicClientFields": [
+        "makerAddress",
+        "signature",
+        "inscriptionId",
+        "runesOutput",
+        "orderType"
+      ],
+      "publicClientAssetSelector": "exactly one of inscriptionId or runesOutput is populated",
+      "publicClientOptionalOnChainProcedures": ["createPsbt.bulkTransfer", "broadcastPsbt.bulkTransfer"],
+      "publicClientOptionalOnChainRequired": [
+        "signedBulkTransferPsbt",
+        "unsignedBulkTransferPsbt",
+        "ordAddress",
+        "ordPublicKey",
+        "paymentAddress",
+        "paymentPublicKey",
+        "allowedPaymentOutpoints",
+        "recipientOrdAddress",
+        "feeRate",
+        "mode",
+        "inscriptionIds",
+        "skipBroadcast"
+      ],
+      "challengeLifecycle": "expiry-replay-and-order-binding-not-documented-by-upstream",
+      "broadcaster": "site",
+      "status": "public-client-corroborated-request-and-bip322-lifecycle-binding-blocked"
+    }
+  ],
+  "excluded": ["runes", "tap", "magic-eden", "dotswap"]
+}

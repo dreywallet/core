@@ -1,0 +1,87 @@
+{
+  "vectorVersion": 1,
+  "generatedBy": "scripts/generate-vault-contract-vectors.ts",
+  "scope": "ADR 0007 §§1-2 signer-role production: origin derivation and proof of possession",
+  "note": "PUBLIC DISPOSABLE FIXTURE ONLY. These seeds are published on purpose so a produced proof can be reproduced byte for byte; never fund an address derived from them.",
+  "determinism": "secp256k1 ECDSA, RFC 6979 deterministic nonce, low-S normalized, compact 64-byte encoding",
+  "records": {
+    "mainnet": {
+      "seedHex": "92499a24a071b35b095b5e6fc3d7fb0e674da2909766b5dffb2f92e4c06e0cef862770393f7a0917ec004d144f90fccebb7cb165de6a38cce93e2e86e8898d6d",
+      "role": "mobile-b",
+      "masterFingerprintHex": "4953d01f",
+      "accountXpub": "xpub6EejbtwegzzyEqx8ZPJryUJWVouvQCkveR2aU63ZTbHc2VwUPpNoBF9dfaeCcLhdjvxzFtaeLeXcC5N8EnvETKPh7KtMeogB9RLazW2XnpM",
+      "originPath": "m/48'/0'/0'/2'",
+      "originHex": "53515642010101004953d01f0000000e6d2f3438272f30272f30272f32270000006f787075623645656a62747765677a7a79457178385a504a7279554a57566f757651436b76655232615536335a546248633256775550704e6f4246396466616543634c68646a76787a467461654c65586343354e38456e7645544b5068374b744d656f674239524c617a5732586e704d",
+      "proofPublicKeyHex": "02912d8c68e528ee027df79029c242be43c5e30c62d47941c1f238f296341ae168",
+      "proofInput": {
+        "version": 1,
+        "origin": {
+          "version": 1,
+          "role": "mobile-b",
+          "network": "mainnet",
+          "masterFingerprintHex": "4953d01f",
+          "originPath": "m/48'/0'/0'/2'",
+          "accountXpub": "xpub6EejbtwegzzyEqx8ZPJryUJWVouvQCkveR2aU63ZTbHc2VwUPpNoBF9dfaeCcLhdjvxzFtaeLeXcC5N8EnvETKPh7KtMeogB9RLazW2XnpM"
+        },
+        "sessionIdHex": "0297038e7e84e1b5de5e16aa79ae5f23",
+        "challengeNonceHex": "67ff7c5f9de2a93861cc1253ab13c863160a95d20a222e6250d591797fec3b19",
+        "transcriptHashHex": "95d63d9a9fc8bf13ac152447c4b8aaba77454c5c073e55e3479cb03a59e4e34f",
+        "expiresAtMs": "1893456000000"
+      },
+      "proofResult": {
+        "version": 1,
+        "role": "mobile-b",
+        "inputDigestHex": "2d7baa4be78a74cb02a0b7eb5af689e11154d5c0cfe1758ca001624a796c5c6b",
+        "proofPublicKeyHex": "02912d8c68e528ee027df79029c242be43c5e30c62d47941c1f238f296341ae168",
+        "signatureHex": "0999163ba1fee55116d7563ebe3a4d205e998f7cac758157667abe14bd82b74d6eebacd88fca51cfeb2b66e5d249240cd6921fc1a1a62df50c3b3a0a5a7be9ad",
+        "scheme": "secp256k1-ecdsa-compact-low-s-v1"
+      },
+      "proofResultHex": "535156420301012d7baa4be78a74cb02a0b7eb5af689e11154d5c0cfe1758ca001624a796c5c6b02912d8c68e528ee027df79029c242be43c5e30c62d47941c1f238f296341ae1680999163ba1fee55116d7563ebe3a4d205e998f7cac758157667abe14bd82b74d6eebacd88fca51cfeb2b66e5d249240cd6921fc1a1a62df50c3b3a0a5a7be9ad00",
+      "independence": {
+        "spendingSeedHex": "49b62ade3942d0992304aff1d2b3c4798a4f74e45ba625e29cc18648e31164871695184c576b336b2f80ddd5a0642ea4e5bc583949af0918e8c42023d93836e0",
+        "spendingOriginPath": "m/48'/0'/0'/2'",
+        "spendingMasterFingerprintHex": "a9d8d43e",
+        "spendingAccountXpub": "xpub6EaEXibHR447DC1ttcGfdM2UrhKhm1Dju93BzcjFLLLvfXp3oSm9mMnar14txiHbXZP7uEFgcHKX24zAfxzJEkmCNtoWFRycNT6J7yMxmdY"
+      }
+    },
+    "signet": {
+      "seedHex": "057ae502ffb97411b5d766c8f48cdd84fdc43dcdc9f8384b53920da9a9dab53af56b0e4f825dce71cbc979c634efa88ed5be4a4027d09afebb412ff878a867ab",
+      "role": "mobile-b",
+      "masterFingerprintHex": "2df79a7f",
+      "accountXpub": "tpubDF6FKKsPRt8Wt6zm9qJ4QKKdMWsMt69rxaHknwNuhvu5spQD8vBfBCRGddKVTno9aAvJ5JTjr5Vei5kyTW6ospBAHZFWEWi9Bowz5Xb3JZF",
+      "originPath": "m/48'/1'/0'/2'",
+      "originHex": "53515642010101012df79a7f0000000e6d2f3438272f31272f30272f32270000006f74707562444636464b4b73505274385774367a6d39714a34514b4b644d57734d743639727861486b6e774e756876753573705144387642664243524764644b56546e6f396141764a354a546a7235566569356b795457366f73704241485a465745576939426f777a355862334a5a46",
+      "proofPublicKeyHex": "02551a032a0402fb5ecf66e3e5b12b08300bc5d47bfc1f6ee7b7c48de0bc9f14c4",
+      "proofInput": {
+        "version": 1,
+        "origin": {
+          "version": 1,
+          "role": "mobile-b",
+          "network": "signet",
+          "masterFingerprintHex": "2df79a7f",
+          "originPath": "m/48'/1'/0'/2'",
+          "accountXpub": "tpubDF6FKKsPRt8Wt6zm9qJ4QKKdMWsMt69rxaHknwNuhvu5spQD8vBfBCRGddKVTno9aAvJ5JTjr5Vei5kyTW6ospBAHZFWEWi9Bowz5Xb3JZF"
+        },
+        "sessionIdHex": "99e87e5c28df33925e8121209b7f6540",
+        "challengeNonceHex": "51aea3c5861b6fafd58577ad9db04c2dbc53b7b5e2ed5e3465fcbb35d8749b24",
+        "transcriptHashHex": "396d175ceb317527eb8ce56c592742db8d9d1476a6b90920ed51cc3c1af626b0",
+        "expiresAtMs": "1893456000000"
+      },
+      "proofResult": {
+        "version": 1,
+        "role": "mobile-b",
+        "inputDigestHex": "48ed0690b0df80d51081121ac7da6a971c8c1865fb4d30fb201a4b6f72d13bf6",
+        "proofPublicKeyHex": "02551a032a0402fb5ecf66e3e5b12b08300bc5d47bfc1f6ee7b7c48de0bc9f14c4",
+        "signatureHex": "3acabbc6e94230525b7f6a5dadafb8701f30dfbe4a468ee860254fa394e1fd2e290cb9a1f669cae1af51d3494122cb84f510b97931a07cf563d18f38e159abac",
+        "scheme": "secp256k1-ecdsa-compact-low-s-v1"
+      },
+      "proofResultHex": "5351564203010148ed0690b0df80d51081121ac7da6a971c8c1865fb4d30fb201a4b6f72d13bf602551a032a0402fb5ecf66e3e5b12b08300bc5d47bfc1f6ee7b7c48de0bc9f14c43acabbc6e94230525b7f6a5dadafb8701f30dfbe4a468ee860254fa394e1fd2e290cb9a1f669cae1af51d3494122cb84f510b97931a07cf563d18f38e159abac00",
+      "independence": {
+        "spendingSeedHex": "f1c6ecedbd33df2d46478276e63f079d0a07530fd80d9463618dd14ca4096b35fc81b1d0cf063a744b5aba4c45f6ffc4d26481b5b3c57c9f1624b74e5e9eb0bc",
+        "spendingOriginPath": "m/48'/1'/0'/2'",
+        "spendingMasterFingerprintHex": "2daf6703",
+        "spendingAccountXpub": "tpubDFJ5YF7gCBexJX2qiE697fVbxVrEroyRRpm6ZHaToNcYpMHBo6xfvguYD9gX3BGKqdAjC9FSeUTMVTLhG2YfmzK1dt5pJ1HgNfVkDJjLS54"
+      }
+    }
+  }
+}

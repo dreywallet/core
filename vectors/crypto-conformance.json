@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/generate-conformance-vectors.mjs",
+  "note": "Golden crypto conformance vectors. Regenerate only via the generator; it cross-checks libsodium against independent implementations before writing.",
+  "argon2id": {
+    "passwordUtf8": "conformance-password-v1",
+    "saltHex": "000102030405060708090a0b0c0d0e0f",
+    "params": {
+      "paramsVersion": 1,
+      "algorithm": "argon2id13",
+      "opsLimit": 3,
+      "memLimitBytes": 67108864,
+      "parallelism": 1
+    },
+    "kekHex": "08b77262715708da9d9dbc1022e87def1a678cd7b83218a3e0c9e5d8cc7a1664"
+  },
+  "xchacha20poly1305": {
+    "keyHex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+    "nonceHex": "303132333435363738393a3b3c3d3e3f4041424344454647",
+    "aadUtf8": "squirrel-conformance:v1:aead",
+    "plaintextUtf8": "The quick brown fox jumps over 13 lazy dogs.",
+    "boxB64": "oEQOJc+BJvuTAhFd2OE+vfCU6DCjp4GazCmI1bOHNHz8x2UxikKHduvPDhXQ2oyZIf9820yCOYv5lFr0"
+  },
+  "sha256": {
+    "dataUtf8": "squirrel-conformance-sha256",
+    "digestHex": "63a6cd59b65022b261c7f0c3a1ced979b45c5c503d052ce78386e2425896326b"
+  },
+  "ed25519": {
+    "messageUtf8": "squirrel-conformance-ed25519",
+    "publicKeyHex": "0d7550754e0800a5d237eef5826035766b9b3e5a15868a940ab289958788e3b0",
+    "signatureHex": "b85139e0c31333c837c96acac42ab3dbfc657d854db244445c6be44fd2ba484ea699715f76a8e09fe7383bd2d2d54cada1769f7fb2e238bd1a24ce1fd8842a03",
+    "expectedValid": true,
+    "corruptedSignatureHex": "b95139e0c31333c837c96acac42ab3dbfc657d854db244445c6be44fd2ba484ea699715f76a8e09fe7383bd2d2d54cada1769f7fb2e238bd1a24ce1fd8842a03",
+    "corruptedExpectedValid": false
+  },
+  "vaultRecord": {
+    "password": "conformance-password-v1",
+    "record": {
+      "schemaVersion": 1,
+      "cipherVersion": 1,
+      "vaultId": "conformance-vault",
+      "name": "Conformance vault",
+      "createdAt": 1753920000000,
+      "kdf": {
+        "paramsVersion": 1,
+        "algorithm": "argon2id13",
+        "opsLimit": 1,
+        "memLimitBytes": 8388608,
+        "parallelism": 1,
+        "saltB64": "8PHy8/T19vf4+fr7/P3+/w=="
+      },
+      "wrappedDek": {
+        "nonceB64": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3",
+        "ciphertextB64": "elrU1EtWG1nsUtmN/FQo0uiUpjl3yr/Owxo87oVaCVYDG2uwFWAEPvPxKZmGmB5N"
+      },
+      "payload": {
+        "nonceB64": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaX",
+        "ciphertextB64": "eYEAnLJBMBtErsYoqk2mO9pVvsnqnwBYnu822dvBD+J7LsVWWRDff3R3eXKirMs5c6NnYSMDDTonnfOEkGCer4RMBaME4cN7bKhvI0wBw8+/Br0p3NjGQTF5Gb93XxPxyFnnd3Ln6Qk9HtQGR2Rp8HzOkA59ihEw5GctJ3LLxJ+Eu4OHLaJSbWNNj0oeDPPLuyKNR8PHVzPL3EUuJwNtIzpOmGcu2LMJAVw9xbJh3v9vfXO8qTYYHW6z1DmaZ4z5pPQL0ATqm/2/dM6ko2Gk9LlHGY8d8xEs7DU="
+      }
+    },
+    "expectedDekHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "expectedPayload": {
+      "version": 1,
+      "entropyHex": "000102030405060708090a0b0c0d0e0f",
+      "seedHex": "3779b041fab425e9c0fd55846b2a03e9a388fb12784067bd8ebdb464c2574a05bcc7a8eb54d7b2a2c8420ff60f630722ea5132d28605dbc996c8ca7d7a8311c0"
+    }
+  },
+  "gatewaySignedFixture": {
+    "file": "gateway/status.signed.json",
+    "publicKeyFile": "gateway/dev-public-key.json",
+    "expectedValid": true,
+    "note": "Verified end-to-end by the gateway verify suite in core; listed here so the on-device screen exercises a real signed response."
+  },
+  "bip39": {
+    "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "passphrase": "TREZOR",
+    "seedHex": "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+  },
+  "derivations": [
+    {
+      "path": "m/84'/0'/0'/0/0",
+      "publicKeyHex": "02a0f073d11f80811fb4e6d2b0299695c866a0988c1acf9f82a96ebb925524f328",
+      "address": "bc1qv5rmq0kt9yz3pm36wvzct7p3x6mtgehjul0feu"
+    },
+    {
+      "path": "m/86'/0'/0'/0/0",
+      "publicKeyHex": "036cf32115c2fd0dc462fe82e267d89a17e5f5b43087cfcb3be52b89ac70fac245",
+      "address": "bc1p3ryfth56dp058avv97ppn065ctsk263puvwp4rcka3wpg6cudp9qd3jsuu"
+    }
+  ],
+  "bip322": {
+    "virtualHashes": {
+      "message": "Hello World",
+      "address": "bc1q9vza2e8x573nczrlzms0wvx3gsqjx7vavgkx0l",
+      "network": "mainnet",
+      "messageHash": "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a",
+      "toSpendTxid": "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b",
+      "toSignTxid": "88737ae86f2077145f93cc4b153ae9a1cb8d56afa511988c149c5c8c9d93bddf"
+    },
+    "emptyMessageHashHex": "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1",
+    "p2wpkh": {
+      "message": "2V6TUTMSH4VQ3Z7WZWKYD7DFNH",
+      "address": "bc1qqthe0hz8klx90e7stf6shclhsvqd5ly96pn53v",
+      "signature": "smpAkgwRQIhALC6hdfxNy1n45d7UXSskRBdfZW0Al259E1kDMpipdYkAiAJPfZqb+WurZuf1apU5xeE6Igui9dvt5tihQLDvxlY1AEhAqbnruyo677ktQjio7XOchO3w51Dh9AbRVngha5jtNfT"
+    },
+    "p2tr": {
+      "message": "PURVOQ544B6HUATVBJZN5EZJUU",
+      "address": "bc1pcquvhrqv0q68t4m0hfq6tpn006qrskyc7yrqnp2uyrf2emg3wynsdjyk38",
+      "signature": "smpAUB6B2Rbupzua8LTQIF06516wzl+cwKy1be8RgoiW0riyXdKwe6GTz/5Hnb37m67pJwIKCh+D5jDueG6KpvYpmu8"
+    }
+  },
+  "negativeControl": {
+    "expectMismatch": true,
+    "note": "Deliberately wrong expected KEK. A conformance harness that never computes anything would pass every positive vector; this one must FAIL to match, proving the harness runs.",
+    "argon2id": {
+      "passwordUtf8": "conformance-password-v1",
+      "saltHex": "000102030405060708090a0b0c0d0e0f",
+      "params": {
+        "paramsVersion": 1,
+        "algorithm": "argon2id13",
+        "opsLimit": 3,
+        "memLimitBytes": 67108864,
+        "parallelism": 1
+      },
+      "kekHex": "f7b77262715708da9d9dbc1022e87def1a678cd7b83218a3e0c9e5d8cc7a1664"
+    }
+  }
+}

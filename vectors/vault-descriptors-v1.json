@@ -1,0 +1,383 @@
+{
+  "vectorVersion": 1,
+  "generatedBy": "scripts/generate-vault-contract-vectors.ts",
+  "scope": "ADR 0007 Workstream B1 descriptor, public derivation, native P2WSH, and complete-policy ownership",
+  "note": "PUBLIC DISPOSABLE CONFORMANCE DATA ONLY; never fund these keys or addresses.",
+  "standards": [
+    "BIP32",
+    "BIP48",
+    "BIP67",
+    "BIP380",
+    "BIP382",
+    "BIP383"
+  ],
+  "externalReference": {
+    "implementation": "Bitcoin Core v30.2.0",
+    "offlineRpcs": [
+      "getdescriptorinfo",
+      "deriveaddresses",
+      "createmultisig",
+      "validateaddress"
+    ],
+    "rule": "Every descriptor checksum, ranged address, sorted witness script, and P2WSH scriptPubKey below was cross-checked byte-for-byte."
+  },
+  "records": {
+    "mainnet": {
+      "network": "mainnet",
+      "note": "PUBLIC DISPOSABLE FIXTURE ONLY; never fund these keys or addresses.",
+      "policyId": "f9dfd22faac8e82a6ff1d9917ba8f6f27e75cc5ee90a26912fdbcdb86941fddb",
+      "birthdayHeight": 910000,
+      "receiveDescriptor": "wsh(sortedmulti(2,[c93bbbbe/48h/0h/0h/2h]xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ/0/*,[26bad5b0/48h/0h/0h/2h]xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays/0/*,[42453d9b/48h/0h/0h/2h]xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g/0/*))#h54eet4c",
+      "changeDescriptor": "wsh(sortedmulti(2,[c93bbbbe/48h/0h/0h/2h]xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ/1/*,[26bad5b0/48h/0h/0h/2h]xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays/1/*,[42453d9b/48h/0h/0h/2h]xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g/1/*))#jp7r8d9s",
+      "outputs": [
+        {
+          "version": 1,
+          "network": "mainnet",
+          "policyId": "f9dfd22faac8e82a6ff1d9917ba8f6f27e75cc5ee90a26912fdbcdb86941fddb",
+          "branch": "receive",
+          "index": 0,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "c93bbbbe",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ",
+              "derivationPath": "m/48'/0'/0'/2'/0/0",
+              "publicKeyHex": "03486a7788c8494858072208ff456c170f53e75b6c2db0ed14f1068ab3af7dc949"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "26bad5b0",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays",
+              "derivationPath": "m/48'/0'/0'/2'/0/0",
+              "publicKeyHex": "021b0b4ddadf8535644752687f079543b944ba9239d28df1a48af60e260863b281"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "42453d9b",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g",
+              "derivationPath": "m/48'/0'/0'/2'/0/0",
+              "publicKeyHex": "030fe072cf260a994dbfc4d48c1f8bf80f0c44a637a8a66b14b882f12f579b1893"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "021b0b4ddadf8535644752687f079543b944ba9239d28df1a48af60e260863b281",
+            "030fe072cf260a994dbfc4d48c1f8bf80f0c44a637a8a66b14b882f12f579b1893",
+            "03486a7788c8494858072208ff456c170f53e75b6c2db0ed14f1068ab3af7dc949"
+          ],
+          "witnessScriptHex": "5221021b0b4ddadf8535644752687f079543b944ba9239d28df1a48af60e260863b28121030fe072cf260a994dbfc4d48c1f8bf80f0c44a637a8a66b14b882f12f579b18932103486a7788c8494858072208ff456c170f53e75b6c2db0ed14f1068ab3af7dc94953ae",
+          "scriptPubKeyHex": "002001af2966d4fcb2abbeae67b318cef7d7303976127991585babe358fd9434c1af",
+          "address": "bc1qqxhjjek5lje2h04wv7e33nhh6ucrjasj0xg4skatudv0m9p5cxhsj5zd6r"
+        },
+        {
+          "version": 1,
+          "network": "mainnet",
+          "policyId": "f9dfd22faac8e82a6ff1d9917ba8f6f27e75cc5ee90a26912fdbcdb86941fddb",
+          "branch": "receive",
+          "index": 1,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "c93bbbbe",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ",
+              "derivationPath": "m/48'/0'/0'/2'/0/1",
+              "publicKeyHex": "039fa06d1feb0e6c4f277846ca6aa100e6ab28dbeb71b26b6f116eb5ab5967065f"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "26bad5b0",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays",
+              "derivationPath": "m/48'/0'/0'/2'/0/1",
+              "publicKeyHex": "0288534f14abebda35775a053b4a4255b5fc62590eaf5faa64ef63c662a5bb42c7"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "42453d9b",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g",
+              "derivationPath": "m/48'/0'/0'/2'/0/1",
+              "publicKeyHex": "0273eea4175d0ee1ec67660d01d68d2bc5e0d89ddbc577cb06c0d20b4846099f27"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "0273eea4175d0ee1ec67660d01d68d2bc5e0d89ddbc577cb06c0d20b4846099f27",
+            "0288534f14abebda35775a053b4a4255b5fc62590eaf5faa64ef63c662a5bb42c7",
+            "039fa06d1feb0e6c4f277846ca6aa100e6ab28dbeb71b26b6f116eb5ab5967065f"
+          ],
+          "witnessScriptHex": "52210273eea4175d0ee1ec67660d01d68d2bc5e0d89ddbc577cb06c0d20b4846099f27210288534f14abebda35775a053b4a4255b5fc62590eaf5faa64ef63c662a5bb42c721039fa06d1feb0e6c4f277846ca6aa100e6ab28dbeb71b26b6f116eb5ab5967065f53ae",
+          "scriptPubKeyHex": "0020142a3bfb7218e94f8384f81d61a27d99745a5c892f3ed66d59830fe6810b666e",
+          "address": "bc1qzs4rh7mjrr55lquylqwkrgnan9695hyf9uldvm2esv87dqgtvehqwhge6x"
+        },
+        {
+          "version": 1,
+          "network": "mainnet",
+          "policyId": "f9dfd22faac8e82a6ff1d9917ba8f6f27e75cc5ee90a26912fdbcdb86941fddb",
+          "branch": "change",
+          "index": 0,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "c93bbbbe",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ",
+              "derivationPath": "m/48'/0'/0'/2'/1/0",
+              "publicKeyHex": "035ad75c37495213af54ec7e916849ec5cd9ad687b5ce9029f541e3e858afc1c16"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "26bad5b0",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays",
+              "derivationPath": "m/48'/0'/0'/2'/1/0",
+              "publicKeyHex": "02751792454444906dc9f7184596000f0b893b3c1d40e5510d82bdec3bb7cdcf57"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "42453d9b",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g",
+              "derivationPath": "m/48'/0'/0'/2'/1/0",
+              "publicKeyHex": "0353eda6a6c84943fa968f7eb7fe002df414282b58393dfa60018065a1db9b9ab3"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "02751792454444906dc9f7184596000f0b893b3c1d40e5510d82bdec3bb7cdcf57",
+            "0353eda6a6c84943fa968f7eb7fe002df414282b58393dfa60018065a1db9b9ab3",
+            "035ad75c37495213af54ec7e916849ec5cd9ad687b5ce9029f541e3e858afc1c16"
+          ],
+          "witnessScriptHex": "522102751792454444906dc9f7184596000f0b893b3c1d40e5510d82bdec3bb7cdcf57210353eda6a6c84943fa968f7eb7fe002df414282b58393dfa60018065a1db9b9ab321035ad75c37495213af54ec7e916849ec5cd9ad687b5ce9029f541e3e858afc1c1653ae",
+          "scriptPubKeyHex": "00209e36cd71311f1990c217bd01b2050b6465840513a4d3e215df60080c1f35bb45",
+          "address": "bc1qncmv6uf3ruvepsshh5qmypgtv3jcgpgn5nf7y9wlvqyqc8e4hdzsh7um7l"
+        },
+        {
+          "version": 1,
+          "network": "mainnet",
+          "policyId": "f9dfd22faac8e82a6ff1d9917ba8f6f27e75cc5ee90a26912fdbcdb86941fddb",
+          "branch": "change",
+          "index": 7,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "c93bbbbe",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6DahzkKrkpkHVdFxYWj7sbJbzKwSnxSBMd5N5nznDj4evVwMaHft2xFeCuTzsYLKdkTrEvyc2GzJmUmSZLn9VtHssCCBAzpudVzPCnz9cpQ",
+              "derivationPath": "m/48'/0'/0'/2'/1/7",
+              "publicKeyHex": "03c031721ed35eb6b04909365da71820ace253bd012f96464680546dba5a4b7282"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "26bad5b0",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6Dqkf9KXaaZyPXhePCqTvmnjWFcHVKKDjUgHcxfG78mSEbf6BhFTja2tJ55MZF211GpiMCoE5Azonu7421baXA7eBizJBxvr5Psz662kays",
+              "derivationPath": "m/48'/0'/0'/2'/1/7",
+              "publicKeyHex": "039c30ebf02efd45b8633945466789cf318785f06258c99755aef2984eadfa2d3a"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "42453d9b",
+              "originPath": "m/48'/0'/0'/2'",
+              "accountXpub": "xpub6EzcqER7ySdC5QMsqkBjTP8uaZFHeQhMgQjmKomQaeDzEQk7dnr8imEN7SCKSSEUfXuVucV5ZnkHa5XZ9yw419PcUZMGsEV5d2dY3kNAZ1g",
+              "derivationPath": "m/48'/0'/0'/2'/1/7",
+              "publicKeyHex": "02ca49178276009d1afdfeefce2e7ef2e00c500af0198a65a70e4fc82a6740ece4"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "02ca49178276009d1afdfeefce2e7ef2e00c500af0198a65a70e4fc82a6740ece4",
+            "039c30ebf02efd45b8633945466789cf318785f06258c99755aef2984eadfa2d3a",
+            "03c031721ed35eb6b04909365da71820ace253bd012f96464680546dba5a4b7282"
+          ],
+          "witnessScriptHex": "522102ca49178276009d1afdfeefce2e7ef2e00c500af0198a65a70e4fc82a6740ece421039c30ebf02efd45b8633945466789cf318785f06258c99755aef2984eadfa2d3a2103c031721ed35eb6b04909365da71820ace253bd012f96464680546dba5a4b728253ae",
+          "scriptPubKeyHex": "0020d057cd1fecb2ebccad7c17ef0b00bf9c226d7a3a36d9be6c6bd865705bc4e935",
+          "address": "bc1q6ptu68lvkt4uettuzlhskq9lns3x6736xmvmumrtmpjhqk7yay6scs5wt4"
+        }
+      ]
+    },
+    "signet": {
+      "network": "signet",
+      "note": "PUBLIC DISPOSABLE FIXTURE ONLY; never fund these keys or addresses.",
+      "policyId": "92a3cb06262dce8154db329179313cd923d8b06fc4c7654f5a729ed415238439",
+      "birthdayHeight": 250000,
+      "receiveDescriptor": "wsh(sortedmulti(2,[45fb6ceb/48h/1h/0h/2h]tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu/0/*,[56094159/48h/1h/0h/2h]tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ/0/*,[0af1238b/48h/1h/0h/2h]tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j/0/*))#wgx50wdz",
+      "changeDescriptor": "wsh(sortedmulti(2,[45fb6ceb/48h/1h/0h/2h]tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu/1/*,[56094159/48h/1h/0h/2h]tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ/1/*,[0af1238b/48h/1h/0h/2h]tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j/1/*))#tadw3ga2",
+      "outputs": [
+        {
+          "version": 1,
+          "network": "signet",
+          "policyId": "92a3cb06262dce8154db329179313cd923d8b06fc4c7654f5a729ed415238439",
+          "branch": "receive",
+          "index": 0,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "45fb6ceb",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu",
+              "derivationPath": "m/48'/1'/0'/2'/0/0",
+              "publicKeyHex": "02b36b97b4b64ba2f5ade9416e43fee415c3f701a640a4935dab37651a58d7cab5"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "56094159",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ",
+              "derivationPath": "m/48'/1'/0'/2'/0/0",
+              "publicKeyHex": "03b63167c20935b2975350628a5c6f8f0a93c2228862e18f0ff358d0b7ec0672f6"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "0af1238b",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j",
+              "derivationPath": "m/48'/1'/0'/2'/0/0",
+              "publicKeyHex": "03deffac26ec9398ac47db09d5a83124cbd5c21592077c3c97b96aca6745f946f6"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "02b36b97b4b64ba2f5ade9416e43fee415c3f701a640a4935dab37651a58d7cab5",
+            "03b63167c20935b2975350628a5c6f8f0a93c2228862e18f0ff358d0b7ec0672f6",
+            "03deffac26ec9398ac47db09d5a83124cbd5c21592077c3c97b96aca6745f946f6"
+          ],
+          "witnessScriptHex": "522102b36b97b4b64ba2f5ade9416e43fee415c3f701a640a4935dab37651a58d7cab52103b63167c20935b2975350628a5c6f8f0a93c2228862e18f0ff358d0b7ec0672f62103deffac26ec9398ac47db09d5a83124cbd5c21592077c3c97b96aca6745f946f653ae",
+          "scriptPubKeyHex": "0020771e986a93c19f1613ba6d60c982db28c41fe043b53cd2a11cdcaccbf4c945eb",
+          "address": "tb1qwu0fs65ncx03vya6d4svnqkm9rzplczrk57d9ggumjkvhaxfgh4s6d3sq7"
+        },
+        {
+          "version": 1,
+          "network": "signet",
+          "policyId": "92a3cb06262dce8154db329179313cd923d8b06fc4c7654f5a729ed415238439",
+          "branch": "receive",
+          "index": 1,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "45fb6ceb",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu",
+              "derivationPath": "m/48'/1'/0'/2'/0/1",
+              "publicKeyHex": "03d950080921a72110459efd7fcf4e7eb2da2dcd7ac9e3d142b3823c32ad312dcc"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "56094159",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ",
+              "derivationPath": "m/48'/1'/0'/2'/0/1",
+              "publicKeyHex": "02ec32468df3f7b72fc88f183813d5d7bccc80957404d249ffcf046cef1bdcf7ca"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "0af1238b",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j",
+              "derivationPath": "m/48'/1'/0'/2'/0/1",
+              "publicKeyHex": "0342ba47b4f07cb5fa8af2f027560bd441819fba1283405437ce2b2ffee578a396"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "02ec32468df3f7b72fc88f183813d5d7bccc80957404d249ffcf046cef1bdcf7ca",
+            "0342ba47b4f07cb5fa8af2f027560bd441819fba1283405437ce2b2ffee578a396",
+            "03d950080921a72110459efd7fcf4e7eb2da2dcd7ac9e3d142b3823c32ad312dcc"
+          ],
+          "witnessScriptHex": "522102ec32468df3f7b72fc88f183813d5d7bccc80957404d249ffcf046cef1bdcf7ca210342ba47b4f07cb5fa8af2f027560bd441819fba1283405437ce2b2ffee578a3962103d950080921a72110459efd7fcf4e7eb2da2dcd7ac9e3d142b3823c32ad312dcc53ae",
+          "scriptPubKeyHex": "0020461e456fc442b8bd18af0d8bc3ac61e5486601dad17f5973a7b9b4a91ca8f54f",
+          "address": "tb1qgc0y2m7yg2ut6x90pk9u8trpu4yxvqw669l4jua8hx62j89g748swhgsxq"
+        },
+        {
+          "version": 1,
+          "network": "signet",
+          "policyId": "92a3cb06262dce8154db329179313cd923d8b06fc4c7654f5a729ed415238439",
+          "branch": "change",
+          "index": 0,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "45fb6ceb",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu",
+              "derivationPath": "m/48'/1'/0'/2'/1/0",
+              "publicKeyHex": "02b999c6877c8a5172a6a96bc4137507e051fe8c3631396fb6263fb74f0d655db9"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "56094159",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ",
+              "derivationPath": "m/48'/1'/0'/2'/1/0",
+              "publicKeyHex": "03b7a320605854b506d0daa73f1b68ce91b2c19c79aaa1d74d76b68ab3dc5f83f9"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "0af1238b",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j",
+              "derivationPath": "m/48'/1'/0'/2'/1/0",
+              "publicKeyHex": "02fd963fe1bb7f7f8df716a656a0b159183833ed64c2eb519503f6e4ba646b9b8a"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "02b999c6877c8a5172a6a96bc4137507e051fe8c3631396fb6263fb74f0d655db9",
+            "02fd963fe1bb7f7f8df716a656a0b159183833ed64c2eb519503f6e4ba646b9b8a",
+            "03b7a320605854b506d0daa73f1b68ce91b2c19c79aaa1d74d76b68ab3dc5f83f9"
+          ],
+          "witnessScriptHex": "522102b999c6877c8a5172a6a96bc4137507e051fe8c3631396fb6263fb74f0d655db92102fd963fe1bb7f7f8df716a656a0b159183833ed64c2eb519503f6e4ba646b9b8a2103b7a320605854b506d0daa73f1b68ce91b2c19c79aaa1d74d76b68ab3dc5f83f953ae",
+          "scriptPubKeyHex": "0020e750a326c1ae61f0b8a44d971d4eb1a0d4f27540550cbc6235bfab933d8eb23c",
+          "address": "tb1quag2xfkp4eslpw9yfkt36n435r20ya2q25xtcc34h74ex0vwkg7qw6sk58"
+        },
+        {
+          "version": 1,
+          "network": "signet",
+          "policyId": "92a3cb06262dce8154db329179313cd923d8b06fc4c7654f5a729ed415238439",
+          "branch": "change",
+          "index": 7,
+          "logicalKeys": [
+            {
+              "role": "desktop-a",
+              "masterFingerprintHex": "45fb6ceb",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDFRyY8weMLmcTRVRoJuEVpEYK2EtF8TvARRq53JZ3T487hSLvxQ8SuBBqcERSeuxEnUMSL9VqEbsLVMf6zqELisqmd7n3usUJLkDQvg9zDu",
+              "derivationPath": "m/48'/1'/0'/2'/1/7",
+              "publicKeyHex": "0284c58433423295c90c15603ed53808f8856185ba2cecc1b97fc8d77f1f7c735c"
+            },
+            {
+              "role": "mobile-b",
+              "masterFingerprintHex": "56094159",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDEUmcL37rxryR68kEG5wkBjNRLQhNRX1aUcsZy8Du4J9315t9cVoZA4Xa1J5xVqc35VuWWHLDqftyW9Bkr74RHBJnjrvJNPazv2wds55BeZ",
+              "derivationPath": "m/48'/1'/0'/2'/1/7",
+              "publicKeyHex": "034a579e668473d797f5aa81cb0a8092fa1baea9eafdc980d568d45f5e83bd94c8"
+            },
+            {
+              "role": "recovery-c",
+              "masterFingerprintHex": "0af1238b",
+              "originPath": "m/48'/1'/0'/2'",
+              "accountXpub": "tpubDERdLypmei9CDcmt2PgBZXBwpVMrHiH4kPbUhVGCeCpKhbjwkzwZRvArxHb1EHtHxf28F1Ecm5JQD4rBGk7JQd1hzfUSP5t3hEqfgY1Zu3j",
+              "derivationPath": "m/48'/1'/0'/2'/1/7",
+              "publicKeyHex": "03aba1368b7e6790963a3864cce1124c8a41792d49c83d0c2316f19da02ad64bec"
+            }
+          ],
+          "bip67SortedPublicKeysHex": [
+            "0284c58433423295c90c15603ed53808f8856185ba2cecc1b97fc8d77f1f7c735c",
+            "034a579e668473d797f5aa81cb0a8092fa1baea9eafdc980d568d45f5e83bd94c8",
+            "03aba1368b7e6790963a3864cce1124c8a41792d49c83d0c2316f19da02ad64bec"
+          ],
+          "witnessScriptHex": "52210284c58433423295c90c15603ed53808f8856185ba2cecc1b97fc8d77f1f7c735c21034a579e668473d797f5aa81cb0a8092fa1baea9eafdc980d568d45f5e83bd94c82103aba1368b7e6790963a3864cce1124c8a41792d49c83d0c2316f19da02ad64bec53ae",
+          "scriptPubKeyHex": "002018bc535c886c263181d08c5567faf4e912f8e3506da5e9bd4e5ffc3aab7b68e1",
+          "address": "tb1qrz79xhygdsnrrqws332k07h5ayf03c6sdkj7n02wtl7r42mmdrss4uy6h9"
+        }
+      ]
+    }
+  },
+  "negativeCases": [
+    "missing, malformed, or retained checksum after mutation",
+    "non-canonical whitespace, hardened-marker, source order, or descriptor normalization",
+    "P2SH wrapper, Taproot, Miniscript, multi(), flexible threshold, or alternate fragment",
+    "reordered, duplicated, substituted, uncompressed, private, or malformed key",
+    "wrong network, BIP48 origin, role, branch, child index, wildcard, or hardened child",
+    "one-xpub, fingerprint-only, incomplete-script, or foreign-policy ownership claim",
+    "unknown version, field, network, branch, role, policy ID, or signing meaning"
+  ]
+}

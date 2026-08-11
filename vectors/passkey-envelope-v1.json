@@ -1,0 +1,788 @@
+{
+  "vectorVersion": 1,
+  "generatedBy": "scripts/generate-vault-contract-vectors.ts",
+  "scope": "ADR 0007 Workstream A1 passkey-wrapped-DEK envelope v1",
+  "note": "PUBLIC DISPOSABLE CONFORMANCE DATA ONLY; synthetic PRF outputs, DEKs, and credential IDs; no WebAuthn credential exists and nothing here may touch production storage.",
+  "construction": {
+    "prfEvalInput": "UTF8(\"drey-passkey-prf/v1\") || 00 || prfSalt(32)",
+    "kek": "HKDF-SHA256(ikm = prfOutput(32), salt = hkdfSalt(32), info = UTF8(JSON([\"drey-passkey-kek\", 1, rpOrigin, vaultId, network, credentialIdB64])), length 32)",
+    "aad": "UTF8(JSON([\"drey-passkey-envelope\", 1, rpOrigin, vaultId, network, credentialIdB64, prfSaltB64, hkdfSaltB64]))",
+    "wrappedDek": "XChaCha20-Poly1305(KEK, nonce(24), AAD) over DEK(32); ciphertext || tag(16)",
+    "displayMetadata": "label and createdAtMs are outside the AAD; nothing security-relevant may branch on them",
+    "rpOrigin": "exact chrome-extension://[a-p]{32} serialized origin (A0 identity decision); any other platform identity is a new envelope version"
+  },
+  "records": {
+    "mainnet": {
+      "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+      "vaultId": "passkey-fixture-mainnet",
+      "network": "mainnet",
+      "dekHex": "e7c72997ac7dd588720a9035e9d5db32800f82de33ed23ee4198f09380247ee4",
+      "prfOutputHex": "b5ebd375011e1a788371e85145076f91af34466ded418e0f78015e26508a4015",
+      "prfEvalInputHex": "647265792d706173736b65792d7072662f763100b1702cc03fe6c1f7eb74dc76eefd4f29195b474dfe9fc94914029b8d7d78dc61",
+      "aadJson": "[\"drey-passkey-envelope\",1,\"chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn\",\"passkey-fixture-mainnet\",\"mainnet\",\"9DfRlaKVLlXw8vyKbFhT2kLkAfA=\",\"sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=\",\"YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=\"]",
+      "kekInfoJson": "[\"drey-passkey-kek\",1,\"chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn\",\"passkey-fixture-mainnet\",\"mainnet\",\"9DfRlaKVLlXw8vyKbFhT2kLkAfA=\"]",
+      "envelope": {
+        "version": 1,
+        "kdf": "hkdf-sha256-v1",
+        "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+        "vaultId": "passkey-fixture-mainnet",
+        "network": "mainnet",
+        "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+        "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+        "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+        "label": "Fixture credential",
+        "createdAtMs": 1785542400000,
+        "wrappedDek": {
+          "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+          "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+        }
+      },
+      "labelMutationStillDecrypts": {
+        "version": 1,
+        "kdf": "hkdf-sha256-v1",
+        "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+        "vaultId": "passkey-fixture-mainnet",
+        "network": "mainnet",
+        "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+        "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+        "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+        "label": "renamed after enrollment",
+        "createdAtMs": 1785542400000,
+        "wrappedDek": {
+          "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+          "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+        }
+      },
+      "negatives": {
+        "versionTwo": {
+          "envelope": {
+            "version": 2,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "unsupported-version"
+        },
+        "unknownField": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            },
+            "extra": true
+          },
+          "expectedError": "tampered"
+        },
+        "kdfLabelMutation": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v2",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "nonExtensionRpOrigin": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "https://example.com",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "tamperedCiphertext": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "qDksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedNonce": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "FJH3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedCredentialId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "YPxnyyj2JUI0RjbZvdG0LO8+8lE=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedPrfSalt": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "LonnJjzFnwZoPfGSnl2kK7TnQLTlbbrjPfUFq/1lPEs=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedHkdfSalt": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "WLvVd0B6eIIt2s2LMGvVHK7C4AlqHAt/7JKz1NxmPlg=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "wrongExpectedVaultId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "another-wallet",
+            "network": "mainnet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongExpectedNetwork": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "signet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongExpectedRpOrigin": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "prfOutputHex": "38aac6ef59f48a92e2d784449dfe018eb4d35d2723574ac4dacab5442b5aed37",
+          "expectedError": "decrypt-failed"
+        },
+        "truncatedPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "prfOutputHex": "b5ebd375011e1a788371e85145076f91af34466ded418e0f78015e26508a40",
+          "expectedError": "invalid-prf-output"
+        },
+        "allZeroPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "prfOutputHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "expectedError": "invalid-prf-output"
+        },
+        "nonCanonicalCredentialId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "65H3rnkxLnHQOGyPaK63np8FgqkNsX0c",
+              "ciphertextB64": "VzksD1P5fHSLicqXpOJu4SHDXLwcx5Sf8rSkectKbAREQrfw0s3/YsvWt3+CYvPf"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "authenticatedWrongLengthDek": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-mainnet",
+            "network": "mainnet",
+            "credentialIdB64": "9DfRlaKVLlXw8vyKbFhT2kLkAfA=",
+            "prfSaltB64": "sXAswD/mwffrdNx27v1PKRlbR03+n8lJFAKbjX143GE=",
+            "hkdfSaltB64": "YqvP7nn/1UYX3yAg3suGc2ZOFp5bAdtrZi9JbroeBYQ=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "9ciDIP5MEqh9e/6isHDKINKGw5Tm1hq1",
+              "ciphertextB64": "NgCGQr9uy0arcrKvepCdLnBHBgro4yYh8JwleGGGC5w="
+            }
+          },
+          "expectedError": "tampered"
+        }
+      }
+    },
+    "signet": {
+      "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+      "vaultId": "passkey-fixture-signet",
+      "network": "signet",
+      "dekHex": "25dd8fdc1535646a396def7ec1b80ea1a142ee6d1e47b565e1e38ea0f557a7c2",
+      "prfOutputHex": "e8c4a152d0ebfab7960c1499acbe8843ccd074f57303859d78c91f941141eb73",
+      "prfEvalInputHex": "647265792d706173736b65792d7072662f763100be84a4fa32620bb6b42260890c411f854e23593ed5fa6e93f4965aca6e6f25a1",
+      "aadJson": "[\"drey-passkey-envelope\",1,\"chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn\",\"passkey-fixture-signet\",\"signet\",\"dJOPL6AWFp8cSkHdrStYSDxFlFM=\",\"voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=\",\"u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=\"]",
+      "kekInfoJson": "[\"drey-passkey-kek\",1,\"chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn\",\"passkey-fixture-signet\",\"signet\",\"dJOPL6AWFp8cSkHdrStYSDxFlFM=\"]",
+      "envelope": {
+        "version": 1,
+        "kdf": "hkdf-sha256-v1",
+        "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+        "vaultId": "passkey-fixture-signet",
+        "network": "signet",
+        "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+        "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+        "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+        "label": "Fixture credential",
+        "createdAtMs": 1785542400000,
+        "wrappedDek": {
+          "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+          "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+        }
+      },
+      "labelMutationStillDecrypts": {
+        "version": 1,
+        "kdf": "hkdf-sha256-v1",
+        "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+        "vaultId": "passkey-fixture-signet",
+        "network": "signet",
+        "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+        "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+        "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+        "label": "renamed after enrollment",
+        "createdAtMs": 1785542400000,
+        "wrappedDek": {
+          "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+          "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+        }
+      },
+      "negatives": {
+        "versionTwo": {
+          "envelope": {
+            "version": 2,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "unsupported-version"
+        },
+        "unknownField": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            },
+            "extra": true
+          },
+          "expectedError": "tampered"
+        },
+        "kdfLabelMutation": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v2",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "nonExtensionRpOrigin": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "https://example.com",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "tamperedCiphertext": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "SviupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedNonce": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "snjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedCredentialId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "yeclQtX70/AThf/iCtsJ6+sdp6U=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedPrfSalt": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "AMq8pQjLr+8KD7VkTtPZfKYbtaoQHlLRY/E9mMKaIuo=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "tamperedHkdfSalt": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "HxmsT6wLwECcSQ4G6wFso+EP0xtEKK6nxU96yw/kNJY=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "decrypt-failed"
+        },
+        "wrongExpectedVaultId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "another-wallet",
+            "network": "signet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongExpectedNetwork": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "mainnet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongExpectedRpOrigin": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expected": {
+            "rpOrigin": "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet"
+          },
+          "expectedError": "identity-mismatch"
+        },
+        "wrongPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "prfOutputHex": "6c7856022773c0ff991db3c358c4071c651d4b25fe9c1f453c4dd656a31e1cd7",
+          "expectedError": "decrypt-failed"
+        },
+        "truncatedPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "prfOutputHex": "e8c4a152d0ebfab7960c1499acbe8843ccd074f57303859d78c91f941141eb",
+          "expectedError": "invalid-prf-output"
+        },
+        "allZeroPrfOutput": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "prfOutputHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "expectedError": "invalid-prf-output"
+        },
+        "nonCanonicalCredentialId": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "TXjOvLnEwt3I+OWE7f4HCAiOhpKVBkKT",
+              "ciphertextB64": "tfiupfOdW2L2gX/qYG2xxUqJ8qNq6h3nnGYvNNVCyTb1Xp8GcQTGhSn3x2KTMbNa"
+            }
+          },
+          "expectedError": "tampered"
+        },
+        "authenticatedWrongLengthDek": {
+          "envelope": {
+            "version": 1,
+            "kdf": "hkdf-sha256-v1",
+            "rpOrigin": "chrome-extension://lgcnmmbgabemdkgacjpcdebbjmmblbmn",
+            "vaultId": "passkey-fixture-signet",
+            "network": "signet",
+            "credentialIdB64": "dJOPL6AWFp8cSkHdrStYSDxFlFM=",
+            "prfSaltB64": "voSk+jJiC7a0ImCJDEEfhU4jWT7V+m6T9JZaym5vJaE=",
+            "hkdfSaltB64": "u8AjAfKMRCvTkEkF7qv4B18FcsUA85QXl1EIAz0TfBo=",
+            "label": "Fixture credential",
+            "createdAtMs": 1785542400000,
+            "wrappedDek": {
+              "nonceB64": "DRa6Gd91MlKEEcFQCWnuKu3No3X5WuRx",
+              "ciphertextB64": "Vak7pLGsibmAnIbwTumb/KouCAdV2wKd8fkOzUFarpA="
+            }
+          },
+          "expectedError": "tampered"
+        }
+      }
+    }
+  }
+}

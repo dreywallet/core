@@ -1,0 +1,339 @@
+{
+  "vectorVersion": 1,
+  "generatedBy": "scripts/generate-vault-contract-vectors.ts",
+  "scope": "single-signature public accounts and exact fractional custom fees",
+  "note": "PUBLIC SYNTHETIC WATCH-ONLY DATA ONLY; no private key or funded outpoint is included.",
+  "accounts": {
+    "mainnet": {
+      "definition": {
+        "version": 1,
+        "accountId": "acct_mainnet_eed96551e6113057c41de5f271541a33bd3552faa25ea6d578452bfe3ffcb993",
+        "network": "mainnet",
+        "derivationAccountIndex": 0,
+        "lanes": {
+          "payment": {
+            "version": 1,
+            "kind": "payment",
+            "purpose": 84,
+            "origin": {
+              "version": 1,
+              "masterFingerprintHex": "67345ddb",
+              "path": "m/84'/0'/0'",
+              "accountXpub": "xpub6CH1fDxq46TXfE9sf3GtXqQnWFMY4Bw6ire3JnB7GMicwS9XaPiAsqsASRMtZbyE51a2RaDeRtgGmcT2QF1gfJ41oAFuUdxNUbJoqD4k2iP"
+            },
+            "receiveDescriptor": "wpkh([67345ddb/84h/0h/0h]xpub6CH1fDxq46TXfE9sf3GtXqQnWFMY4Bw6ire3JnB7GMicwS9XaPiAsqsASRMtZbyE51a2RaDeRtgGmcT2QF1gfJ41oAFuUdxNUbJoqD4k2iP/0/*)#dctw2yjk",
+            "changeDescriptor": "wpkh([67345ddb/84h/0h/0h]xpub6CH1fDxq46TXfE9sf3GtXqQnWFMY4Bw6ire3JnB7GMicwS9XaPiAsqsASRMtZbyE51a2RaDeRtgGmcT2QF1gfJ41oAFuUdxNUbJoqD4k2iP/1/*)#uvw0h3zw"
+          },
+          "ordinals": {
+            "version": 1,
+            "kind": "ordinals",
+            "purpose": 86,
+            "origin": {
+              "version": 1,
+              "masterFingerprintHex": "67345ddb",
+              "path": "m/86'/0'/0'",
+              "accountXpub": "xpub6DL734M9QCu7bK8SXBETYRnf297Py5d7Z1YeL65dDqrN4GxVpaaHttyU5yHBzp2YHRNU9eF8Z73z4pBXBCP2RpjPRbDqq6oXxex1Kfidbm6"
+            },
+            "receiveDescriptor": "tr([67345ddb/86h/0h/0h]xpub6DL734M9QCu7bK8SXBETYRnf297Py5d7Z1YeL65dDqrN4GxVpaaHttyU5yHBzp2YHRNU9eF8Z73z4pBXBCP2RpjPRbDqq6oXxex1Kfidbm6/0/*)#ur23r8mz",
+            "changeDescriptor": "tr([67345ddb/86h/0h/0h]xpub6DL734M9QCu7bK8SXBETYRnf297Py5d7Z1YeL65dDqrN4GxVpaaHttyU5yHBzp2YHRNU9eF8Z73z4pBXBCP2RpjPRbDqq6oXxex1Kfidbm6/1/*)#dh0s7jt6"
+          }
+        }
+      },
+      "accountDescriptorCborHex": "a2011a67345ddb0282d99d74a2016877706b68284030290281d99d6fa403582103d8252bb9f73996b1ed0112c11abdf294ad99eeefc7355fb1abcb2490a9bd4cbc0458200bd2f17a0eddf84b4498d0ff3be7834dee8e7fdf208fc5a114df3c68d172713a06d99d70a201861854f500f500f5021a67345ddb081a550427fad99d74a201667472284030290281d99d6fa40358210368d20f4f7935cca14ae4f58424574802225736eff287c546d8c479203029cda504582062b80d9eef914b6ac69edb744b5bfd58219c7aeca950ec485b78496d739bf97606d99d70a201861856f500f500f5021a67345ddb081ae4526613",
+      "addresses": [
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 0,
+          "address": "bc1qdjnna766yqgrerwftefnnrr0w084qxfdmx85y4",
+          "path": "m/84'/0'/0'/0/0",
+          "publicKeyHex": "023fceb636c6269159c005a1dd8e22daedbecc51fbd025bfead5954885c3e46c41",
+          "scriptPubKeyHex": "00146ca73efb5a20103c8dc95e53398c6f73cf50192d"
+        },
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 1,
+          "address": "bc1qpwjuh988m3yz6nlcdw45ag6ezwpxp7h7ydefwz",
+          "path": "m/84'/0'/0'/0/1",
+          "publicKeyHex": "0293a28912ba49bc3af98420c92ff89f2f87ce8b0070b6df015b02b36186caa3ec",
+          "scriptPubKeyHex": "00140ba5cb94e7dc482d4ff86bab4ea359138260fafe"
+        },
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 21,
+          "address": "bc1qu68a96gxk2pqf4e499rmfk0h6h98qu6phcal66",
+          "path": "m/84'/0'/0'/0/21",
+          "publicKeyHex": "02ec9fc9c896d5003a6d53131b7cde2af58382faba56952a5fce7795ddb760f197",
+          "scriptPubKeyHex": "0014e68fd2e906b28204d7352947b4d9f7d5ca707341"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 0,
+          "address": "bc1qs60atrfqnyv9kx8e62mgygukxt7yzfryg82wam",
+          "path": "m/84'/0'/0'/1/0",
+          "publicKeyHex": "025d53f25ea9d563a7babe2d409d8bda9b8d17003e5271acee925e7759ef88c475",
+          "scriptPubKeyHex": "0014869fd58d2099185b18f9d2b682239632fc412464"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 1,
+          "address": "bc1q67tuzghv38ryfu3zehj238cp5faczjz7q8ah4r",
+          "path": "m/84'/0'/0'/1/1",
+          "publicKeyHex": "03f705017c36784f93ea50f6d1d1ee088fbb7504039724900e2221e8e6e90d1735",
+          "scriptPubKeyHex": "0014d797c122ec89c644f222cde4a89f01a27b81485e"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 21,
+          "address": "bc1q6maxuecg2kark67n5lnlflmngcerxpmcrx4q6w",
+          "path": "m/84'/0'/0'/1/21",
+          "publicKeyHex": "0300db8e71be61efd7a9a15ee99b1466718d075ca802141125ba256f837fb99712",
+          "scriptPubKeyHex": "0014d6fa6e670855ba3b6bd3a7e7f4ff734632330778"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 0,
+          "address": "bc1pfs9h7qlsk6net38wzwadpaslcg36kteg8ad2hkmghq95fwnjktws5p79t0",
+          "path": "m/86'/0'/0'/0/0",
+          "publicKeyHex": "03d0086422f653101492dd230693f9d888f1e28a2f6418abe2b358b9d6b9114d80",
+          "scriptPubKeyHex": "51204c0b7f03f0b6a795c4ee13bad0f61fc223ab2f283f5aabdb68b80b44ba72b2dd"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 1,
+          "address": "bc1pthmk7ymnpsur7j788lf9a44930yqkxxnyvaydwh8ra44g58qxnmskfstkv",
+          "path": "m/86'/0'/0'/0/1",
+          "publicKeyHex": "02bcdf5936697d62f6be672bf44db47dc621d2f410d50c71a0a285ad6fd3a6046d",
+          "scriptPubKeyHex": "51205df76f13730c383f4bc73fd25ed6a58bc80b18d3233a46bae71f6b5450e034f7"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 21,
+          "address": "bc1p6w5at7wup5p90q238w8y8w5vemhvalad355kfhmn25y4xqr2fhvqt9ek6k",
+          "path": "m/86'/0'/0'/0/21",
+          "publicKeyHex": "03f73bb0cf12591f1559df7ef059a3603c61cab6b57235a6ef8a79e5dbaa9277e7",
+          "scriptPubKeyHex": "5120d3a9d5f9dc0d025781513b8e43ba8cceeeceffad8d2964df73550953006a4dd8"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 0,
+          "address": "bc1ptdv3k63f3xkh76nq6agksd0rm4980rpay289rr89t4yc0c2ax3nsnv9ef8",
+          "path": "m/86'/0'/0'/1/0",
+          "publicKeyHex": "02304762a59e28cc382c2c2eee6047a9d89789579ef0488ade008e5cbd419c6552",
+          "scriptPubKeyHex": "51205b591b6a2989ad7f6a60d7516835e3dd4a778c3d228e518ce55d4987e15d3467"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 1,
+          "address": "bc1psxrvm7d2al4zt54d8v38wwzsv3n9tz6gfw02tyx9df266w7m3jvs90g8d7",
+          "path": "m/86'/0'/0'/1/1",
+          "publicKeyHex": "0294fedfb906cbf61f1c327c4df0ccf69576ad85ae6153f0404cde1bb141b6dc67",
+          "scriptPubKeyHex": "51208186cdf9aaefea25d2ad3b227738506466558b484b9ea590c56a55ad3bdb8c99"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 21,
+          "address": "bc1psv3s4et0j69wf355td423k8qw2m46t6llnsvwmllk5n6zkyuc7cqa3lcr9",
+          "path": "m/86'/0'/0'/1/21",
+          "publicKeyHex": "02dc9e15c7882906999c13624abc7f4d97fbef7598ea4470f6cc2f06a6c4a47abc",
+          "scriptPubKeyHex": "512083230ae56f968ae4c6945b6aa8d8e072b75d2f5ffce0c76fffb527a1589cc7b0"
+        }
+      ]
+    },
+    "signet": {
+      "definition": {
+        "version": 1,
+        "accountId": "acct_signet_df424cd72c76c38d05a6e1fec765edfef1ada73aaba9f467156f3407d88c5a2c",
+        "network": "signet",
+        "derivationAccountIndex": 0,
+        "lanes": {
+          "payment": {
+            "version": 1,
+            "kind": "payment",
+            "purpose": 84,
+            "origin": {
+              "version": 1,
+              "masterFingerprintHex": "8c8df7cf",
+              "path": "m/84'/1'/0'",
+              "accountXpub": "tpubDCbaGp7hrRXBbuF8XvHd6m3EDh3j7F31y7P9uHRYiwd8NvqK3eACVkDQdmPKqhhj5Y83WcDr2B8R2v9PNA8CDjDzrt6psCvDGPpc3u6mQsA"
+            },
+            "receiveDescriptor": "wpkh([8c8df7cf/84h/1h/0h]tpubDCbaGp7hrRXBbuF8XvHd6m3EDh3j7F31y7P9uHRYiwd8NvqK3eACVkDQdmPKqhhj5Y83WcDr2B8R2v9PNA8CDjDzrt6psCvDGPpc3u6mQsA/0/*)#mg8ltryv",
+            "changeDescriptor": "wpkh([8c8df7cf/84h/1h/0h]tpubDCbaGp7hrRXBbuF8XvHd6m3EDh3j7F31y7P9uHRYiwd8NvqK3eACVkDQdmPKqhhj5Y83WcDr2B8R2v9PNA8CDjDzrt6psCvDGPpc3u6mQsA/1/*)#2uz7kk55"
+          },
+          "ordinals": {
+            "version": 1,
+            "kind": "ordinals",
+            "purpose": 86,
+            "origin": {
+              "version": 1,
+              "masterFingerprintHex": "8c8df7cf",
+              "path": "m/86'/1'/0'",
+              "accountXpub": "tpubDC33mdmvuF9GZgSxugwAd93hDcmXFsmi56ejBUuqftDyRxANLGukaM1WkgwrTjm2Mo75BTy9dmBk9LgfyW67Y4FfLJBB2pTdTkcNWL7KyoC"
+            },
+            "receiveDescriptor": "tr([8c8df7cf/86h/1h/0h]tpubDC33mdmvuF9GZgSxugwAd93hDcmXFsmi56ejBUuqftDyRxANLGukaM1WkgwrTjm2Mo75BTy9dmBk9LgfyW67Y4FfLJBB2pTdTkcNWL7KyoC/0/*)#e75xj8pk",
+            "changeDescriptor": "tr([8c8df7cf/86h/1h/0h]tpubDC33mdmvuF9GZgSxugwAd93hDcmXFsmi56ejBUuqftDyRxANLGukaM1WkgwrTjm2Mo75BTy9dmBk9LgfyW67Y4FfLJBB2pTdTkcNWL7KyoC/1/*)#g2380j3w"
+          }
+        }
+      },
+      "accountDescriptorCborHex": "a2011a8c8df7cf0282d99d74a2016877706b68284030290281d99d6fa503582103ee05d866bb814cdb5fa2405a1fe24e1a08160eb12f1a0eedef77a3f9f33136310458209bf37bbabaf625084bc3f0991bb8eb68d766911953db81b3f7867aaed8fdf54a05d99d71a1020106d99d70a201861854f501f500f5021a8c8df7cf081a4dd2318ed99d74a201667472284030290281d99d6fa50358210274179753686e4eb72766e429f7b726d3326dc5fe2022620dadd1624d01e5b05104582086c886ece42e1b2b0396ddb18b96cbf2f515b23f145d4ff94a189d1a1531bd2805d99d71a1020106d99d70a201861856f501f500f5021a8c8df7cf081a01865716",
+      "addresses": [
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 0,
+          "address": "tb1qvvlqrkupucvtm8vpvrzdheh3gz8nfad4fdx3wr",
+          "path": "m/84'/1'/0'/0/0",
+          "publicKeyHex": "024e20efc038bcc1e5e7bcc7ff2b3e3c08a83a24c8a3cb56790d802700b8739e34",
+          "scriptPubKeyHex": "0014633e01db81e618bd9d8160c4dbe6f1408f34f5b5"
+        },
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 1,
+          "address": "tb1qcl2gsg89v00t6skcxuzjgfzp3us8splwdd6e4f",
+          "path": "m/84'/1'/0'/0/1",
+          "publicKeyHex": "02ae1caf6e388a9ae6810c7db0899d7e85ea57d535834c9e01277d23895f753316",
+          "scriptPubKeyHex": "0014c7d48820e563debd42d837052424418f207807ee"
+        },
+        {
+          "lane": "payment",
+          "chain": 0,
+          "index": 21,
+          "address": "tb1qnzsekksru9w5z6ln3xv8feclgc0uw2eradz5kk",
+          "path": "m/84'/1'/0'/0/21",
+          "publicKeyHex": "0369a67d27f672de471bdb9c61dbf554136b007f2842faec53257176000a72cff6",
+          "scriptPubKeyHex": "001498a19b5a03e15d416bf3899874e71f461fc72b23"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 0,
+          "address": "tb1qrfqnlx0rg3jzhn2krwvhmh6yrw7udsp0wywmkd",
+          "path": "m/84'/1'/0'/1/0",
+          "publicKeyHex": "03d860418ea935e0fcb7b16a73034a74e3afcaf36b78475c4f6af3ceac13140ed3",
+          "scriptPubKeyHex": "00141a413f99e344642bcd561b997ddf441bbdc6c02f"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 1,
+          "address": "tb1qxxe7jjnre3rrtwzllga9phtpez77s8lqumv582",
+          "path": "m/84'/1'/0'/1/1",
+          "publicKeyHex": "02943ecc903211d308c72433f2b2c3a41964940a43a2b8a86f64b4defdce730299",
+          "scriptPubKeyHex": "001431b3e94a63cc4635b85ffa3a50dd61c8bde81fe0"
+        },
+        {
+          "lane": "payment",
+          "chain": 1,
+          "index": 21,
+          "address": "tb1qwm3jr7c9vvrm0wtyc0k60kqxyxgn7w45cq0q7x",
+          "path": "m/84'/1'/0'/1/21",
+          "publicKeyHex": "021bce0b08f0c972213c702cb22a15b7f4249369edbe5235a09373d541ebf923f8",
+          "scriptPubKeyHex": "001476e321fb056307b7b964c3eda7d80621913f3ab4"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 0,
+          "address": "tb1pergy0wjqufsaa5u3knndupuxhvl73araxv5kf45s549eq847q9pq6wa3uq",
+          "path": "m/86'/1'/0'/0/0",
+          "publicKeyHex": "0205e9b2c9a680b832a298ce3ceca7447d8c0d1b6343af583b6a3977d5b7eaf6df",
+          "scriptPubKeyHex": "5120c8d047ba40e261ded391b4e6de0786bb3fe8f47d332964d690a54b901ebe0142"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 1,
+          "address": "tb1pzhv059eek8tyawevs70pmrfh4cgm43rrantv6nkjf3z2jjr8egasxg4t3c",
+          "path": "m/86'/1'/0'/0/1",
+          "publicKeyHex": "026dd8667ca9daf00b04b0e5243e61396f2d17df4ab758fabee910128a8d177cf2",
+          "scriptPubKeyHex": "512015d8fa1739b1d64ebb2c879e1d8d37ae11bac463ecd6cd4ed24c44a94867ca3b"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 0,
+          "index": 21,
+          "address": "tb1pkxfdl8a7jz4kclggnf44duxs82saupr9zguahxy97v6jdlu88cgsjpf388",
+          "path": "m/86'/1'/0'/0/21",
+          "publicKeyHex": "03b8237a81e339653395dceed1f11fb3f2a6dbd0906a92ec4e3c6c06f9cb84a388",
+          "scriptPubKeyHex": "5120b192df9fbe90ab6c7d089a6b56f0d03aa1de04651239db9885f33526ff873e11"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 0,
+          "address": "tb1ps55gezr5uhhjdx7sjc3e96exqz89thl8cehtz3puqwxxmrvyqefqrtydgy",
+          "path": "m/86'/1'/0'/1/0",
+          "publicKeyHex": "03706c8ccb4fe69d05b13b48433d6793cc59b7b549c50ab7b0c6dedbefa334b8a3",
+          "scriptPubKeyHex": "512085288c8874e5ef269bd0962392eb26008e55dfe7c66eb1443c038c6d8d840652"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 1,
+          "address": "tb1p2r0x9cjx4d7ct65futccjdzae6ktp5he0v4ajsaldy42fs6uw8sqaqvnh4",
+          "path": "m/86'/1'/0'/1/1",
+          "publicKeyHex": "02bb444cf6635d79032092cdcbdfc99c1b5e4cab5bae61464db2010f8d9fcab009",
+          "scriptPubKeyHex": "512050de62e246ab7d85ea89e2f189345dceacb0d2f97b2bd943bf692aa4c35c71e0"
+        },
+        {
+          "lane": "ordinals",
+          "chain": 1,
+          "index": 21,
+          "address": "tb1p3nl2sal0c08333k0klujqjqlv804mff3qhe8ktqkd8uurvh7l93sa3rtxq",
+          "path": "m/86'/1'/0'/1/21",
+          "publicKeyHex": "0314f5855f3ff3f534e76a1cb59b468bc804639d08aab44945fac34b1938392621",
+          "scriptPubKeyHex": "51208cfea877efc3cf18c6cfb7f920481f61df5da53105f27b2c1669f9c1b2fef963"
+        }
+      ]
+    }
+  },
+  "customFees": [
+    {
+      "input": "1",
+      "normalizedSatPerVb": "1",
+      "satPerKvB": "1000",
+      "vsize": "141",
+      "feeSats": "141"
+    },
+    {
+      "input": "1.25",
+      "normalizedSatPerVb": "1.25",
+      "satPerKvB": "1250",
+      "vsize": "141",
+      "feeSats": "177"
+    },
+    {
+      "input": "1.001",
+      "normalizedSatPerVb": "1.001",
+      "satPerKvB": "1001",
+      "vsize": "141",
+      "feeSats": "142"
+    },
+    {
+      "input": "12.340",
+      "normalizedSatPerVb": "12.34",
+      "satPerKvB": "12340",
+      "vsize": "141",
+      "feeSats": "1740"
+    },
+    {
+      "input": "10000.000",
+      "normalizedSatPerVb": "10000",
+      "satPerKvB": "10000000",
+      "vsize": "141",
+      "feeSats": "1410000"
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "marketplace": "ordnet",
+  "upstreamVersion": "trading-api-1.0.0",
+  "network": "mainnet",
+  "openApiDigest": "d70e88af982c4536f4f4234bb4772f61335436a4b533bd34cae4e4b591b7f57b",
+  "baseUrl": "https://ord.net/api/v1",
+  "authentication": {
+    "challengeEndpoint": "/auth/challenge",
+    "verifyEndpoint": "/auth/verify",
+    "protocol": "bip322-simple",
+    "roles": ["ordinals", "payment"],
+    "paymentFundingRequirementBtc": "0.01",
+    "bearerTokenValiditySeconds": 3600,
+    "walletBindingIdRequiredOnWrites": true
+  },
+  "preflightBinding": {
+    "model": "handle-and-expected-txid-echo",
+    "staleStateStatus": 409,
+    "handles": ["anchorUtxoId", "purchaseAnchorUtxoId", "admissionAnchorUtxoId", "preflightToken"],
+    "expectedTxidFields": [
+      "expectedSettlementTxid",
+      "expectedListingTransferTxids",
+      "expectedTransferTxid",
+      "expectedFundingTxid",
+      "expectedFundingParentTxid",
+      "expectedPayoutTxid"
+    ],
+    "note": "Preflight responses return handles and expected txids that the submit body must echo verbatim; 409 means trading state changed and stale PSBTs must never be reused."
+  },
+  "contracts": [
+    {
+      "action": "list",
+      "preflightEndpoint": "/collection/{slug}/listings/preflight",
+      "submitEndpoint": "/collection/{slug}/listings/submit",
+      "batchItems": { "min": 1, "max": 20, "walletTemplateSupports": 1 },
+      "handle": "anchorUtxoId",
+      "steps": [
+        { "name": "escrow-transfer", "stepIndex": 0, "sighash": 0 },
+        { "name": "settlement-leg", "stepIndex": 1, "sighash": 131, "taprootScriptPath": true },
+        { "name": "batch-recovery", "stepIndex": 2, "sighash": 1 }
+      ],
+      "ordnetPublicKey": "d2dc3222298e2a5f4e1c7d702fae2bcf7821cc0a095a478b95c62195b0df7398",
+      "submitEcho": ["anchors[].inscriptionId", "anchors[].anchorUtxoId", "signed", "signedRecoveryPsbt", "durationDays"],
+      "durationDaysEnum": [1, 7, 30, 90, 180],
+      "delistEndpoint": "/collection/{slug}/listings/delist",
+      "delistRequiresSigning": false
+    },
+    {
+      "action": "buy",
+      "preflightEndpoint": "/collection/{slug}/purchases/preflight",
+      "submitEndpoint": "/collection/{slug}/purchases/submit",
+      "handle": "purchaseAnchorUtxoId",
+      "steps": [{ "name": "buyer-settlement", "stepIndex": 0, "sighash": "default" }],
+      "stepCount": { "min": 1, "max": 1 },
+      "submitEcho": ["purchaseAnchorUtxoId", "selectedPaymentUtxos", "signedSteps"],
+      "expectedTxids": ["expectedSettlementTxid", "expectedListingTransferTxids"],
+      "spendableUtxosRequiredForNonXverseBindings": true
+    },
+    {
+      "action": "offer",
+      "preflightEndpoint": "/collection/{slug}/offers/preflight",
+      "submitEndpoint": "/collection/{slug}/offers/submit",
+      "steps": [{ "name": "buyer-funding", "stepIndex": 0, "sighash": "default" }],
+      "stepCount": { "min": 1, "max": 1 },
+      "submitEcho": ["selectedPaymentUtxos", "signedItems[].inscriptionId", "signedItems[].expectedSettlementTxid"],
+      "validityHoursEnum": [12, 24, 168, 720, 2160],
+      "priceRule": "multiple-of-1000-sats"
+    },
+    {
+      "action": "counter_offer",
+      "preflightEndpoint": "/inscriptions/{id}/offers/{offerId}/counter/preflight",
+      "submitEndpoint": "/inscriptions/{id}/offers/{offerId}/counter/submit",
+      "handle": "anchorUtxoId",
+      "steps": [
+        { "name": "inscription-transfer", "stepIndex": 0, "sighash": 0 },
+        { "name": "settlement", "stepIndex": 1, "sighash": 129 },
+        { "name": "recovery", "stepIndex": 2, "sighash": 129 }
+      ],
+      "submitEcho": ["anchorUtxoId", "expectedTransferTxid", "expectedSettlementTxid", "signedSteps"],
+      "priceRule": "beat-current-offer-by-1000-sats-multiple-of-1000"
+    },
+    {
+      "action": "accept_offer",
+      "preflightEndpoint": "/inscriptions/{id}/offers/{offerId}/accept/preflight",
+      "submitEndpoint": "/inscriptions/{id}/offers/{offerId}/accept/submit",
+      "steps": [
+        { "name": "seller-settlement", "stepIndex": 0, "sighash": 131 },
+        { "name": "payout", "stepIndex": 1, "sighash": "default", "optional": true }
+      ],
+      "stepCount": { "min": 1, "max": 2 },
+      "submitEcho": ["expectedSettlementTxid", "expectedPayoutTxid", "signedSteps"]
+    },
+    {
+      "action": "accept_counter",
+      "preflightEndpoint": "/inscriptions/{id}/offers/{offerId}/counter/accept/preflight",
+      "submitEndpoint": "/inscriptions/{id}/offers/{offerId}/counter/accept/submit",
+      "steps": [
+        { "name": "buyer-funding", "stepIndex": 0, "sighash": "default" },
+        { "name": "buyer-settlement", "stepIndex": 1, "sighash": "default" }
+      ],
+      "stepCount": { "min": 2, "max": 2 },
+      "submitEcho": ["selectedPaymentUtxos", "expectedFundingTxid", "expectedSettlementTxid", "signedSteps"]
+    },
+    {
+      "action": "collection_offer",
+      "status": "fixture-only-pending-v2-design-review",
+      "preflightEndpoint": "/collection/{slug}/collection-offers/preflight",
+      "submitEndpoint": "/collection/{slug}/collection-offers/submit",
+      "handle": "preflightToken",
+      "criteriaVersion": 1,
+      "scriptMarker": "ordnet-offer/v2",
+      "transactionVersion": 3,
+      "packagePolicy": "one-parent-one-child",
+      "fundingParent": { "feeRateSatVb": 0, "broadcastDeferred": true },
+      "steps": [{ "name": "funding-parent", "stepIndex": 0, "sighash": "default" }],
+      "offerCount": { "min": 1, "max": 10 },
+      "submitEcho": [
+        "offers[].preflightToken",
+        "offers[].expectedFundingParentTxid",
+        "offers[].fundingParentVout",
+        "offers[].selectedPaymentUtxos",
+        "offers[].signedFundingParentStep"
+      ]
+    }
+  ],
+  "offerStatusEnum": ["active", "accepted", "rejected", "cancelled", "expired", "invalidated"],
+  "stalePreflightStatus": 409,
+  "keyRotation": "unspecified-by-vendor; the pinned co-signer key and its xpub are published but no rotation or detection contract exists"
+}

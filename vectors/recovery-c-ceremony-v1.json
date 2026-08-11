@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "records": {
+    "mainnet": {
+      "setup": {
+        "challenge": {
+          "version": 1,
+          "role": "recovery-c",
+          "network": "mainnet",
+          "sessionIdHex": "4a410352932f79e2ded86946bb961292",
+          "challengeNonceHex": "c556949184375fd275d47d11961c83433cf058f68caaa36372cc8a1d8d23856d",
+          "transcriptHashHex": "a22c02abe6f0b1ecfdd496914974d649e646b26a0a05358328fb79b549f1c81b",
+          "desktopOrigin": {
+            "version": 1,
+            "role": "desktop-a",
+            "network": "mainnet",
+            "masterFingerprintHex": "73c5da0a",
+            "originPath": "m/48'/0'/0'/2'",
+            "accountXpub": "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"
+          },
+          "createdAtMs": "1785542400000",
+          "expiresAtMs": "1785628800000"
+        },
+        "challengeHex": "535156420d0102004a410352932f79e2ded86946bb961292c556949184375fd275d47d11961c83433cf058f68caaa36372cc8a1d8d23856da22c02abe6f0b1ecfdd496914974d649e646b26a0a05358328fb79b549f1c81b00000091535156420101000073c5da0a0000000e6d2f3438272f30272f30272f32270000006f7870756236446b4641585751326448787132766174727439717941336258595534546f57517743486266355842326d5354657863485a43654b5331565a5963506f4264355838795663625846484a523952385543567074383256583156685232386d43797855464c3472364b4672660000019fba9ed8000000019fbfc53400",
+        "fingerprint": "a737-6c3e-9591-a996",
+        "response": {
+          "version": 1,
+          "challengeDigestHex": "a7376c3e9591a996bd32edef91ecc193ba65710e6dd302158ce1b86f82532f01",
+          "origin": {
+            "version": 1,
+            "role": "recovery-c",
+            "network": "mainnet",
+            "masterFingerprintHex": "28645006",
+            "originPath": "m/48'/0'/0'/2'",
+            "accountXpub": "xpub6DnEBNkSJKBYQmsbhS1sP9cNdtU5c9PLFGCjTJmxicxc13WB8zNNGQazabQpyFAGW5bV9tMko4uBxDxjUKL6dSAcx1tEbgEHtgSqyRsekh6"
+          },
+          "proof": {
+            "version": 1,
+            "role": "recovery-c",
+            "inputDigestHex": "e80b285e8ccf27f53f8dc4ac83cb656f358b39ad50981dbef0a09cee947f6988",
+            "proofPublicKeyHex": "03229cb34fe3eb1af43b6dd2a2e1b31681039b71d9303ded36b3128ef359e379bd",
+            "signatureHex": "5adb3cca2f6cfb72a39977440aba4e58f0863c68da5af014b996cd771e21170c69fd954ef48651cb7d1b849806841649a0245758635cac795150c02921fbf3e3",
+            "scheme": "secp256k1-ecdsa-compact-low-s-v1"
+          }
+        },
+        "responseHex": "535156420e01a7376c3e9591a996bd32edef91ecc193ba65710e6dd302158ce1b86f82532f01000000915351564201010200286450060000000e6d2f3438272f30272f30272f32270000006f7870756236446e45424e6b534a4b4259516d7362685331735039634e647455356339504c4647436a544a6d786963786331335742387a4e4e4751617a61625170794641475735625639744d6b6f3475427844786a554b4c3664534163783174456267454874675371795273656b68360000008953515642030102e80b285e8ccf27f53f8dc4ac83cb656f358b39ad50981dbef0a09cee947f698803229cb34fe3eb1af43b6dd2a2e1b31681039b71d9303ded36b3128ef359e379bd5adb3cca2f6cfb72a39977440aba4e58f0863c68da5af014b996cd771e21170c69fd954ef48651cb7d1b849806841649a0245758635cac795150c02921fbf3e300"
+      },
+      "backupCheck": {
+        "challenge": {
+          "version": 1,
+          "role": "recovery-c",
+          "network": "mainnet",
+          "policyId": "c7d35e1fb64e1e2771aff84d2c85fa3447cb3793c42bc7b3f717c8e40faf8a26",
+          "recoveryOrigin": {
+            "version": 1,
+            "role": "recovery-c",
+            "network": "mainnet",
+            "masterFingerprintHex": "28645006",
+            "originPath": "m/48'/0'/0'/2'",
+            "accountXpub": "xpub6DnEBNkSJKBYQmsbhS1sP9cNdtU5c9PLFGCjTJmxicxc13WB8zNNGQazabQpyFAGW5bV9tMko4uBxDxjUKL6dSAcx1tEbgEHtgSqyRsekh6"
+          },
+          "sessionIdHex": "de84618c4efa01d1f049dd5854bba669",
+          "challengeNonceHex": "5ac1f87db17d1d23020ea046d5b62710221cb948b9dc610733dc8d7136b8627e",
+          "standaloneToolVersion": "drey-vault-recovery-v1",
+          "standaloneToolSourceDigest": "3ccd03afd0db0735d11a3b3ad9b059a7fc6b8a96f6f68de8c7d8f8293e36943a",
+          "standaloneToolArtifactDigest": "d7078d4f2b36a1259987a64136cc18d43add5820f9333395a6db76cce034fa50",
+          "createdAtMs": "1785542400000",
+          "expiresAtMs": "1785628800000"
+        },
+        "challengeHex": "535156420f010200c7d35e1fb64e1e2771aff84d2c85fa3447cb3793c42bc7b3f717c8e40faf8a26000000915351564201010200286450060000000e6d2f3438272f30272f30272f32270000006f7870756236446e45424e6b534a4b4259516d7362685331735039634e647455356339504c4647436a544a6d786963786331335742387a4e4e4751617a61625170794641475735625639744d6b6f3475427844786a554b4c3664534163783174456267454874675371795273656b6836de84618c4efa01d1f049dd5854bba6695ac1f87db17d1d23020ea046d5b62710221cb948b9dc610733dc8d7136b8627e00000016647265792d7661756c742d7265636f766572792d76313ccd03afd0db0735d11a3b3ad9b059a7fc6b8a96f6f68de8c7d8f8293e36943ad7078d4f2b36a1259987a64136cc18d43add5820f9333395a6db76cce034fa500000019fba9ed8000000019fbfc53400",
+        "fingerprint": "d815-b785-f1d0-9dcd",
+        "response": {
+          "version": 1,
+          "network": "mainnet",
+          "policyId": "c7d35e1fb64e1e2771aff84d2c85fa3447cb3793c42bc7b3f717c8e40faf8a26",
+          "challengeDigestHex": "d815b785f1d09dcd2e20bd2ed12ec79417bdeacff0c23a9e7a42248b6d1cb23d",
+          "proofPublicKeyHex": "03229cb34fe3eb1af43b6dd2a2e1b31681039b71d9303ded36b3128ef359e379bd",
+          "signatureHex": "52ae4d02bad5299ccc89c4a323e533a808dbeab00b68d66b44ce21f61ca793f161294d1f6a80f152fbac390a4fdd5061db4f84251ee27ae21f57a1e40178ed2c",
+          "scheme": "recovery-c-backup-check-secp256k1-ecdsa-compact-low-s-v1"
+        },
+        "responseHex": "53515642100100c7d35e1fb64e1e2771aff84d2c85fa3447cb3793c42bc7b3f717c8e40faf8a26d815b785f1d09dcd2e20bd2ed12ec79417bdeacff0c23a9e7a42248b6d1cb23d03229cb34fe3eb1af43b6dd2a2e1b31681039b71d9303ded36b3128ef359e379bd52ae4d02bad5299ccc89c4a323e533a808dbeab00b68d66b44ce21f61ca793f161294d1f6a80f152fbac390a4fdd5061db4f84251ee27ae21f57a1e40178ed2c00"
+      }
+    },
+    "signet": {
+      "setup": {
+        "challenge": {
+          "version": 1,
+          "role": "recovery-c",
+          "network": "signet",
+          "sessionIdHex": "ca01539e7553c9279436320cd431e1c2",
+          "challengeNonceHex": "0e6b46e0e218e5392bf0d53e206c86ac5f4637f9f66fbcbcb9c15fb4fefe7646",
+          "transcriptHashHex": "9e0206e9afb8f706fba6d9fa5c40d631a79249df564d47bddfdaacaadfecfe48",
+          "desktopOrigin": {
+            "version": 1,
+            "role": "desktop-a",
+            "network": "signet",
+            "masterFingerprintHex": "73c5da0a",
+            "originPath": "m/48'/1'/0'/2'",
+            "accountXpub": "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ"
+          },
+          "createdAtMs": "1785542400000",
+          "expiresAtMs": "1785628800000"
+        },
+        "challengeHex": "535156420d010201ca01539e7553c9279436320cd431e1c20e6b46e0e218e5392bf0d53e206c86ac5f4637f9f66fbcbcb9c15fb4fefe76469e0206e9afb8f706fba6d9fa5c40d631a79249df564d47bddfdaacaadfecfe4800000091535156420101000173c5da0a0000000e6d2f3438272f31272f30272f32270000006f747075624446483964677a76657944387a5462505546754c72476d4379644e76786568794e6455584b4a41514e387834615a346a36555a7147666e71467244344e7179615456474b62764557353474737650544b32556f5362434331504a593869434e6977544c3352575a456865510000019fba9ed8000000019fbfc53400",
+        "fingerprint": "3e9c-17cd-62a7-98cd",
+        "response": {
+          "version": 1,
+          "challengeDigestHex": "3e9c17cd62a798cdb83524c7ee63731e48f269949137fe1a90eea0a0db6985c6",
+          "origin": {
+            "version": 1,
+            "role": "recovery-c",
+            "network": "signet",
+            "masterFingerprintHex": "28645006",
+            "originPath": "m/48'/1'/0'/2'",
+            "accountXpub": "tpubDEwqCvJxKwKWX9xvRe48uofWJn1Y89Jn8UeH1Efrjb1UEVjUDy3URYTiqWaVCW7WdvHrL8XrSihHEhTwv5H3VDJoakjuCHiAnr6xcF2Xm4s"
+          },
+          "proof": {
+            "version": 1,
+            "role": "recovery-c",
+            "inputDigestHex": "aaa59807f37963185b51f0916be0c9465ea99435264ece4d233c4ae6d9d46fb3",
+            "proofPublicKeyHex": "033d693bd1a3ece139f62ab52a28e34c069c8d68f18788ca5f5b2ff9d800730ef2",
+            "signatureHex": "18e9ad0859521fa1f77b48679062d532be57ad6f1f365d7fac3adcfddea1353d202877904557523ac450fe19e847f08700695068d9772d2935b841dbf39445a4",
+            "scheme": "secp256k1-ecdsa-compact-low-s-v1"
+          }
+        },
+        "responseHex": "535156420e013e9c17cd62a798cdb83524c7ee63731e48f269949137fe1a90eea0a0db6985c6000000915351564201010201286450060000000e6d2f3438272f31272f30272f32270000006f747075624445777143764a784b774b575839787652653438756f66574a6e315938394a6e38556548314566726a62315545566a5544793355525954697157615643573757647648724c38587253696848456854777635483356444a6f616b6a75434869416e723678634632586d34730000008953515642030102aaa59807f37963185b51f0916be0c9465ea99435264ece4d233c4ae6d9d46fb3033d693bd1a3ece139f62ab52a28e34c069c8d68f18788ca5f5b2ff9d800730ef218e9ad0859521fa1f77b48679062d532be57ad6f1f365d7fac3adcfddea1353d202877904557523ac450fe19e847f08700695068d9772d2935b841dbf39445a400"
+      },
+      "backupCheck": {
+        "challenge": {
+          "version": 1,
+          "role": "recovery-c",
+          "network": "signet",
+          "policyId": "3529ce6c5531fce6857466fed6c714e1719bf3c9c2781d8ea97f59cf4d2f1b61",
+          "recoveryOrigin": {
+            "version": 1,
+            "role": "recovery-c",
+            "network": "signet",
+            "masterFingerprintHex": "28645006",
+            "originPath": "m/48'/1'/0'/2'",
+            "accountXpub": "tpubDEwqCvJxKwKWX9xvRe48uofWJn1Y89Jn8UeH1Efrjb1UEVjUDy3URYTiqWaVCW7WdvHrL8XrSihHEhTwv5H3VDJoakjuCHiAnr6xcF2Xm4s"
+          },
+          "sessionIdHex": "565dabf4dbe648531be5237ea7e55718",
+          "challengeNonceHex": "df17d44c970ab934e99ebb550569e22badb127c01940e17ee4f4efb4d7e2b592",
+          "standaloneToolVersion": "drey-vault-recovery-v1",
+          "standaloneToolSourceDigest": "3ccd03afd0db0735d11a3b3ad9b059a7fc6b8a96f6f68de8c7d8f8293e36943a",
+          "standaloneToolArtifactDigest": "d7078d4f2b36a1259987a64136cc18d43add5820f9333395a6db76cce034fa50",
+          "createdAtMs": "1785542400000",
+          "expiresAtMs": "1785628800000"
+        },
+        "challengeHex": "535156420f0102013529ce6c5531fce6857466fed6c714e1719bf3c9c2781d8ea97f59cf4d2f1b61000000915351564201010201286450060000000e6d2f3438272f31272f30272f32270000006f747075624445777143764a784b774b575839787652653438756f66574a6e315938394a6e38556548314566726a62315545566a5544793355525954697157615643573757647648724c38587253696848456854777635483356444a6f616b6a75434869416e723678634632586d3473565dabf4dbe648531be5237ea7e55718df17d44c970ab934e99ebb550569e22badb127c01940e17ee4f4efb4d7e2b59200000016647265792d7661756c742d7265636f766572792d76313ccd03afd0db0735d11a3b3ad9b059a7fc6b8a96f6f68de8c7d8f8293e36943ad7078d4f2b36a1259987a64136cc18d43add5820f9333395a6db76cce034fa500000019fba9ed8000000019fbfc53400",
+        "fingerprint": "b821-1153-4723-8951",
+        "response": {
+          "version": 1,
+          "network": "signet",
+          "policyId": "3529ce6c5531fce6857466fed6c714e1719bf3c9c2781d8ea97f59cf4d2f1b61",
+          "challengeDigestHex": "b8211153472389514c73aee58fe315d078d882cacebc5bac5f71788b976bd992",
+          "proofPublicKeyHex": "033d693bd1a3ece139f62ab52a28e34c069c8d68f18788ca5f5b2ff9d800730ef2",
+          "signatureHex": "db9d35cde880806e74adc8aa3d4c9ce94d5e5ba780e4fb2435f88a7faed99b1201fac2efe8f63501fd5a76f62a0d05ca6bf8a890d1594610a7370cfd2b8bb5ad",
+          "scheme": "recovery-c-backup-check-secp256k1-ecdsa-compact-low-s-v1"
+        },
+        "responseHex": "535156421001013529ce6c5531fce6857466fed6c714e1719bf3c9c2781d8ea97f59cf4d2f1b61b8211153472389514c73aee58fe315d078d882cacebc5bac5f71788b976bd992033d693bd1a3ece139f62ab52a28e34c069c8d68f18788ca5f5b2ff9d800730ef2db9d35cde880806e74adc8aa3d4c9ce94d5e5ba780e4fb2435f88a7faed99b1201fac2efe8f63501fd5a76f62a0d05ca6bf8a890d1594610a7370cfd2b8bb5ad00"
+      }
+    }
+  }
+}

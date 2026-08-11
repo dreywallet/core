@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": "drey-marketplace-fixtures-1",
+  "generatedForNetwork": "signet",
+  "entries": [
+    {
+      "id": "satflow-contracts-v1",
+      "marketplace": "satflow",
+      "path": "satflow-contracts.v1.json",
+      "sourceUrl": "https://docs.satflow.com/reference/overview",
+      "accessedAt": "2026-07-22",
+      "upstreamVersion": "1.1.4-prod",
+      "sha256": "95240c09f465cee0ecd4102252ff2bbfafcd674bb63da80ce23a778abd99c2f7",
+      "transformation": "Manually reviewed v1.1.4-prod documentation plus the public 2026-07-22 production client procedure names and wallet-facing field paths for native listing, compact listing, purchase, secure purchase, and cancellation. Public client evidence is explicitly non-authoritative; upstream response, compact-stage, and cancellation-lifecycle omissions remain blocked, and no credentials, signatures, private API data, or live transaction responses were used."
+    },
+    {
+      "id": "ordnet-contracts-v2",
+      "marketplace": "ordnet",
+      "path": "ordnet-contracts.v2.json",
+      "sourceUrl": "https://developers.ord.net/openapi.json",
+      "accessedAt": "2026-08-10",
+      "upstreamVersion": "trading-api-1.0.0",
+      "sha256": "cfa92aa936505af2616337d2245826cd92d04d516985af66ca4685af38a45438",
+      "transformation": "Manually reviewed canonical subset re-derived from the published ORD.NET Trading API 1.0.0 OpenAPI 3.1 document (byte-identical to the 2026-07-22 capture, digest d70e88af...) plus the developers.ord.net listing/buying/offers reference pages: per-step sighash tables, preflight handle and expected-txid echo binding, 409 stale-state semantics, BIP-322 auth with the 0.01 BTC payment funding gate, and the pinned sale co-signer key. Collection/trait funding-parent (ordnet-offer/v2) shapes are recorded but remain fixture-only pending design review. No credentials, signatures, private API data, or live transaction responses were used."
+    }
+  ]
+}

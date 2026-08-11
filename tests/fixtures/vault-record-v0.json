@@ -1,0 +1,16 @@
+{
+  "vaultId": "vault-legacy",
+  "name": "Legacy vault",
+  "createdAt": 1750000000000,
+  "salt": "ZGVmZ2hpamtsbW5vcHFycw==",
+  "opslimit": 1,
+  "memlimit": 8388608,
+  "wrappedDek": {
+    "nonceB64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+    "ciphertextB64": "9t4DDBV+tk5p9iX6dPS69bIFRrjL2dSECwe8zKryqXrnbjcxvTEQbzGauM6gdoh/"
+  },
+  "payload": {
+    "nonceB64": "e3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t7",
+    "ciphertextB64": "R8vrruwQGbcvpeQS6W37Kli+CqbCnBdbatMnwNU1OKIdpOxfa4cIURGWMuWbcUdrz4ajmccKscGVlTicDoRNYj6z9Wb10YyFznJH8OsWEgIBN/kXr7/wFVdlhOPmbAjcx3w7SajTJXojoUJ8KlAr7R9VzjrO2K1yrEC4SbzyBlEEVZfftgJ3ko9Oy3xgyXHfebYL4XgOKZUs5OTNaCzL26pFtsj+t5LwmjAYh3Ki5V9OqPDwtG9kxnZJ0jWf6ls3bkeL41DP0Sh9yzPFepR1szZ6WHpuI8Ra+hs="
+  }
+}

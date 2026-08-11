@@ -1,0 +1,326 @@
+{
+  "vectorVersion": 1,
+  "generatedBy": "scripts/generate-vault-contract-vectors.ts",
+  "scope": "M2m ordinary native-send compatibility",
+  "note": "PUBLIC SYNTHETIC COMPATIBILITY DATA ONLY; no private key or funded outpoint exists.",
+  "network": "signet",
+  "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+  "recipientAddress": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+  "recipientScriptPubKey": "00140707070707070707070707070707070707070707",
+  "inputTemplate": {
+    "scriptPubKey": "0014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f",
+    "derivation": {
+      "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+      "account": 0,
+      "lane": "payment",
+      "chain": 0,
+      "index": 0,
+      "path": "m/84'/1'/0'/0/0",
+      "publicKeyHex": "0234634a23256fa1cb64f24a7828dde5e63d402e069ab6474494ff5b140cf4c8e0"
+    }
+  },
+  "changeOutput": {
+    "address": "tb1qa3x3484e3373f2pd6rk8xty2a3znhh4nxkgplr",
+    "scriptPubKey": "0014ec4d1a9eb98c7d14a82dd0ec732c8aec453bdeb3",
+    "role": "payment_change",
+    "derivation": {
+      "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+      "account": 0,
+      "lane": "payment",
+      "chain": 1,
+      "index": 4,
+      "path": "m/84'/1'/0'/1/4",
+      "publicKeyHex": "024dc1031ce46a8a1b916128b0b6780795b3cf20ce71f936c6541afc006985ef52"
+    }
+  },
+  "addressOutcomes": {
+    "malformed": {
+      "address": "not-an-address",
+      "network": "signet",
+      "expected": {
+        "ok": false,
+        "reason": "invalid_address"
+      }
+    },
+    "wrongNetwork": {
+      "address": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+      "network": "mainnet",
+      "expected": {
+        "ok": false,
+        "reason": "invalid_address"
+      }
+    },
+    "unsupportedFutureWitness": {
+      "address": "BC1SW50QGDZ25J",
+      "network": "mainnet",
+      "expected": {
+        "ok": false,
+        "reason": "unsupported_output_type"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "fixed_amount_change",
+      "values": [
+        [
+          "a",
+          "30000"
+        ]
+      ],
+      "amountSats": "20000",
+      "sendMax": false,
+      "expected": {
+        "ok": true,
+        "candidate": {
+          "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+          "account": 0,
+          "inputs": [
+            {
+              "outpoint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+              "valueSats": "30000",
+              "sequence": 4294967293,
+              "sighash": 1,
+              "ownership": "wallet",
+              "path": "m/84'/1'/0'/0/0",
+              "primaryClass": "cardinal_clean"
+            }
+          ],
+          "outputs": [
+            {
+              "address": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+              "scriptPubKey": "00140707070707070707070707070707070707070707",
+              "valueSats": "20000",
+              "role": "recipient"
+            },
+            {
+              "address": "tb1qa3x3484e3373f2pd6rk8xty2a3znhh4nxkgplr",
+              "scriptPubKey": "0014ec4d1a9eb98c7d14a82dd0ec732c8aec453bdeb3",
+              "valueSats": "9718",
+              "role": "payment_change"
+            }
+          ],
+          "feeSats": "282",
+          "vsize": "141",
+          "protectedSatFlow": [],
+          "rbf": true,
+          "parentTxid": null,
+          "replacesTxid": null,
+          "psbtHex": "70736274ff0100710200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000fdffffff02204e0000000000001600140707070707070707070707070707070707070707f625000000000000160014ec4d1a9eb98c7d14a82dd0ec732c8aec453bdeb3000000000001011f3075000000000000160014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f01030401000000000000",
+          "psbtHash": "d13446fc24127fb4cafba784a23e33cbe704dd1fe6a06c9c8c095a0dab482733"
+        }
+      }
+    },
+    {
+      "name": "exact_no_change",
+      "values": [
+        [
+          "a",
+          "20220"
+        ]
+      ],
+      "amountSats": "20000",
+      "sendMax": false,
+      "expected": {
+        "ok": true,
+        "candidate": {
+          "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+          "account": 0,
+          "inputs": [
+            {
+              "outpoint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+              "valueSats": "20220",
+              "sequence": 4294967293,
+              "sighash": 1,
+              "ownership": "wallet",
+              "path": "m/84'/1'/0'/0/0",
+              "primaryClass": "cardinal_clean"
+            }
+          ],
+          "outputs": [
+            {
+              "address": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+              "scriptPubKey": "00140707070707070707070707070707070707070707",
+              "valueSats": "20000",
+              "role": "recipient"
+            }
+          ],
+          "feeSats": "220",
+          "vsize": "110",
+          "protectedSatFlow": [],
+          "rbf": true,
+          "parentTxid": null,
+          "replacesTxid": null,
+          "psbtHex": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000fdffffff01204e0000000000001600140707070707070707070707070707070707070707000000000001011ffc4e000000000000160014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f010304010000000000",
+          "psbtHash": "4d71b7cdb296a53240b87d186cf7f0216f3359820789301539e28fcac9230e02"
+        }
+      }
+    },
+    {
+      "name": "send_max_excludes_protected",
+      "values": [
+        [
+          "a",
+          "50000"
+        ],
+        [
+          "b",
+          "80000",
+          "protected"
+        ]
+      ],
+      "amountSats": "0",
+      "sendMax": true,
+      "expected": {
+        "ok": true,
+        "candidate": {
+          "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+          "account": 0,
+          "inputs": [
+            {
+              "outpoint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+              "valueSats": "50000",
+              "sequence": 4294967293,
+              "sighash": 1,
+              "ownership": "wallet",
+              "path": "m/84'/1'/0'/0/0",
+              "primaryClass": "cardinal_clean"
+            }
+          ],
+          "outputs": [
+            {
+              "address": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+              "scriptPubKey": "00140707070707070707070707070707070707070707",
+              "valueSats": "49780",
+              "role": "recipient"
+            }
+          ],
+          "feeSats": "220",
+          "vsize": "110",
+          "protectedSatFlow": [],
+          "rbf": true,
+          "parentTxid": null,
+          "replacesTxid": null,
+          "psbtHex": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000fdffffff0174c20000000000001600140707070707070707070707070707070707070707000000000001011f50c3000000000000160014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f010304010000000000",
+          "psbtHash": "d85732d3119ca130fd416801421e295b3e3abda45389265362c2f57abc91897d"
+        }
+      }
+    },
+    {
+      "name": "labeled_tie",
+      "values": [
+        [
+          "a",
+          "12000"
+        ],
+        [
+          "b",
+          "12000"
+        ],
+        [
+          "c",
+          "12000"
+        ]
+      ],
+      "amountSats": "15000",
+      "sendMax": false,
+      "labels": {
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0": "savings|",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0": "exchange|",
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:0": "exchange|"
+      },
+      "expected": {
+        "ok": true,
+        "candidate": {
+          "accountId": "acct_signet_742fd45b59ce15864b1833b53141a976d6552d6f33fed376aa3b2aab9d5b7813",
+          "account": 0,
+          "inputs": [
+            {
+              "outpoint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0",
+              "valueSats": "12000",
+              "sequence": 4294967293,
+              "sighash": 1,
+              "ownership": "wallet",
+              "path": "m/84'/1'/0'/0/0",
+              "primaryClass": "cardinal_clean"
+            },
+            {
+              "outpoint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:0",
+              "valueSats": "12000",
+              "sequence": 4294967293,
+              "sighash": 1,
+              "ownership": "wallet",
+              "path": "m/84'/1'/0'/0/0",
+              "primaryClass": "cardinal_clean"
+            }
+          ],
+          "outputs": [
+            {
+              "address": "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+              "scriptPubKey": "00140707070707070707070707070707070707070707",
+              "valueSats": "15000",
+              "role": "recipient"
+            },
+            {
+              "address": "tb1qa3x3484e3373f2pd6rk8xty2a3znhh4nxkgplr",
+              "scriptPubKey": "0014ec4d1a9eb98c7d14a82dd0ec732c8aec453bdeb3",
+              "valueSats": "8582",
+              "role": "payment_change"
+            }
+          ],
+          "feeSats": "418",
+          "vsize": "209",
+          "protectedSatFlow": [],
+          "rbf": true,
+          "parentTxid": null,
+          "replacesTxid": null,
+          "psbtHex": "70736274ff01009a0200000002bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000fdffffffcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc0000000000fdffffff02983a00000000000016001407070707070707070707070707070707070707078621000000000000160014ec4d1a9eb98c7d14a82dd0ec732c8aec453bdeb3000000000001011fe02e000000000000160014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f010304010000000001011fe02e000000000000160014d4f8a32a4550a089fbcdc99cc77ecc1002431e6f01030401000000000000",
+          "psbtHash": "be5133799560f293b3f0981d3c1e950f664df274f5f5c17c41a4b5b3ec49750d"
+        }
+      }
+    },
+    {
+      "name": "recipient_dust",
+      "values": [
+        [
+          "a",
+          "10000"
+        ]
+      ],
+      "amountSats": "293",
+      "sendMax": false,
+      "expected": {
+        "ok": false,
+        "reason": "dust"
+      }
+    },
+    {
+      "name": "insufficient_eligible_funds",
+      "values": [],
+      "amountSats": "20000",
+      "sendMax": false,
+      "expected": {
+        "ok": false,
+        "reason": "insufficient_eligible_funds"
+      }
+    },
+    {
+      "name": "manual_selection_mismatch",
+      "values": [
+        [
+          "a",
+          "100000"
+        ]
+      ],
+      "amountSats": "20000",
+      "sendMax": false,
+      "selectedOutpoints": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0"
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "manual_selection_mismatch"
+      }
+    }
+  ]
+}
