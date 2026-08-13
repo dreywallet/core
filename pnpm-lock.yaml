@@ -38,7 +38,7 @@ importers:
         version: 2.2.0
       '@types/libsodium-wrappers-sumo':
         specifier: ^0.7.8
-        version: 0.7.9
+        version: 0.7.8
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2

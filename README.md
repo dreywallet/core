@@ -13,6 +13,20 @@ Consumers pin an exact release tag rather than a semver range:
 
 TypeScript source is consumed directly; there is no build step.
 
+## Bounded account scanning
+
+Core v0.8.1 prefers the signed `/v1/wallet/scan-snapshot` route and falls back
+to the legacy snapshot route only when the new route returns 404 during an
+additive gateway rollout.
+
+The scan contract treats balances and collectibles differently from Activity:
+UTXOs, source identity, classification revision and response integrity must
+remain complete and independently verified, while transaction history may be
+explicitly partial. Signed active script hashes keep a used zero-balance
+address discoverable even when its older history exceeds the service limit.
+Partial coverage is versioned in the encrypted cache, survives restart and is
+never used to relax spending or classification gates.
+
 ## Layout
 
 - `src/domain/` — wallet domain logic (keys, PSBTs, vault multisig, policy)
