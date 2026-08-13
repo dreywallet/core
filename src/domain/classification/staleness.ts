@@ -22,6 +22,7 @@ export type DataGatingState = z.infer<typeof dataGatingStateSchema>;
 /** §11.4's blocked list; M6 read surfaces show it, M7 flows enforce it. */
 export const BLOCKED_WHILE_STALE = [
   'native_send',
+  'native_batch_send',
   'dapp_signature',
   'rbf',
   'cpfp',

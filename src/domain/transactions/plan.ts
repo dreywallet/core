@@ -6,10 +6,18 @@ import type { AssetFacts, WalletUtxo } from '../classification/types';
 import type { Network, AddressKind } from '../keys/derivation';
 import type { StoredInscriptionPreviewSet } from './inscription-previews';
 import { formatFeeRateSatPerVb, parseCustomFeeRate } from './fees';
+import {
+  canonicalOrdinalBatchSelections,
+  type BoundOrdinalBatchSelection,
+} from './ordinal-transfer';
+import { summarizeOrdinalPostageRecovery, type OrdinalPostageTarget } from './postage-manage';
 
 export type TransactionKind =
   | 'native_send'
+  | 'native_batch_send'
   | 'ordinal_transfer'
+  | 'ordinal_batch_transfer'
+  | 'ordinal_postage_manage'
   | 'consolidation'
   | 'rbf'
   | 'cpfp'
@@ -36,8 +44,15 @@ export function customPlanFeePolicy(rateSatPerVb: string): Extract<PlanFeePolicy
 export type PlanIntent =
   | { kind: 'native_send'; account: number; recipient: string; amountSats: string; sendMax: boolean;
       selectedOutpoints?: Array<{ txid: string; vout: number }> | undefined }
+  | { kind: 'native_batch_send'; account: number;
+      recipients: Array<{ address: string; amountSats: string }>;
+      selectedOutpoints?: Array<{ txid: string; vout: number }> | undefined }
   | { kind: 'ordinal_transfer'; account: number; inscriptionId: string;
       outpoint: { txid: string; vout: number }; recipient: string }
+  | { kind: 'ordinal_batch_transfer'; account: number; recipient: string;
+      selections: BoundOrdinalBatchSelection[] }
+  | { kind: 'ordinal_postage_manage'; account: number;
+      selections: BoundOrdinalBatchSelection[]; target: OrdinalPostageTarget }
   | { kind: 'consolidation'; account: number; selectedOutpoints: Array<{ txid: string; vout: number }> }
   | { kind: 'rbf' | 'cpfp'; txid: string }
   | { kind: 'rescue' | 'ordinal_sweep'; outpoint: { txid: string; vout: number } };
@@ -171,6 +186,46 @@ export interface OrdinalActionReview {
   requiresNonTaprootAcknowledgement: boolean;
 }
 
+export interface OrdinalBatchActionReview {
+  action: 'batch_transfer';
+  inscriptionIds: string[];
+  inscriptionCount: number;
+  destination: {
+    address: string;
+    ownership: 'external' | 'wallet';
+  };
+  groups: Array<{
+    inscriptionIds: string[];
+    source: { txid: string; vout: number; valueSats: string };
+    satpoint: string;
+    destinationOutputIndex: number;
+    postageSats: string;
+    travelsTogether: boolean;
+  }>;
+  aggregatePostageSats: string;
+  feeSats: string;
+  fundingInputs: Array<{ txid: string; vout: number; valueSats: string }>;
+  returnedBtcSats: string;
+  requiresNonTaprootAcknowledgement: boolean;
+}
+
+export interface OrdinalPostageActionReview {
+  action: 'manage_postage';
+  target: OrdinalPostageTarget;
+  items: Array<{
+    inscriptionId: string;
+    source: { txid: string; vout: number; valueSats: string };
+    currentPostageSats: string;
+    retainedPostageSats: string;
+    recoveredSats: string;
+    addedSats: string;
+  }>;
+  feeSats: string;
+  fundingInputs: Array<{ txid: string; vout: number; valueSats: string }>;
+  returnedBtcSats: string;
+  netReturnedBtcSats: string;
+}
+
 export interface TransactionReview {
   kind: TransactionKind;
   network: Network;
@@ -196,7 +251,7 @@ export interface TransactionReview {
   standardModeMissingProtections: string[];
   requiresReauth: boolean;
   reauthReasons: TransactionReauthReason[];
-  ordinalAction: OrdinalActionReview | null;
+  ordinalAction: OrdinalActionReview | OrdinalBatchActionReview | OrdinalPostageActionReview | null;
 }
 
 function normalized(value: unknown): unknown {
@@ -344,6 +399,8 @@ export function reviewFromPlan(
   if (plan.feeSats > 100_000n) reauthReasons.push('high_absolute_fee');
   const postageIsNotPrincipal =
     plan.kind === 'ordinal_transfer' ||
+    plan.kind === 'ordinal_batch_transfer' ||
+    plan.kind === 'ordinal_postage_manage' ||
     plan.kind === 'rescue' ||
     plan.kind === 'ordinal_sweep';
   if (!postageIsNotPrincipal && sent > 0n && plan.feeSats * 10n > sent) {
@@ -388,7 +445,11 @@ export function reviewFromPlan(
   };
 }
 
-export function ordinalActionReviewFromPlan(plan: TransactionPlan): OrdinalActionReview | null {
+export function ordinalActionReviewFromPlan(
+  plan: TransactionPlan,
+): OrdinalActionReview | OrdinalBatchActionReview | OrdinalPostageActionReview | null {
+  if (plan.kind === 'ordinal_batch_transfer') return ordinalBatchActionReviewFromPlan(plan);
+  if (plan.kind === 'ordinal_postage_manage') return ordinalPostageActionReviewFromPlan(plan);
   if (
     plan.kind !== 'ordinal_transfer' &&
     plan.kind !== 'rescue' &&
@@ -444,6 +505,114 @@ export function ordinalActionReviewFromPlan(plan: TransactionPlan): OrdinalActio
   };
 }
 
+function ordinalPostageActionReviewFromPlan(plan: TransactionPlan): OrdinalPostageActionReview {
+  const intent = plan.policy.intent;
+  if (intent.kind !== 'ordinal_postage_manage') throw new Error('postage management intent is missing');
+  const items = intent.selections.map((selection) => {
+    const inputIndex = plan.inputs.findIndex((input) =>
+      input.txid === selection.outpoint.txid && input.vout === selection.outpoint.vout);
+    const source = plan.inputs[inputIndex];
+    const flow = plan.protectedSatFlow.find((item) =>
+      item.inputIndex === inputIndex && item.inscriptionId === selection.inscriptionId);
+    const retained = flow ? plan.outputs[flow.outputIndex] : undefined;
+    if (!source || !flow || !retained) throw new Error('postage management source is incomplete');
+    const recovered = source.valueSats > retained.valueSats ? source.valueSats - retained.valueSats : 0n;
+    const added = retained.valueSats > source.valueSats ? retained.valueSats - source.valueSats : 0n;
+    return {
+      inscriptionId: selection.inscriptionId,
+      source: { txid: source.txid, vout: source.vout, valueSats: source.valueSats.toString() },
+      currentPostageSats: source.valueSats.toString(),
+      retainedPostageSats: retained.valueSats.toString(),
+      recoveredSats: recovered.toString(),
+      addedSats: added.toString(),
+    };
+  });
+  const protectedIndexes = new Set(items.map((item) => plan.inputs.findIndex((input) =>
+    input.txid === item.source.txid && input.vout === item.source.vout)));
+  const recovery = summarizeOrdinalPostageRecovery(items.map((item) => ({
+    currentPostageSats: BigInt(item.currentPostageSats),
+    retainedPostageSats: BigInt(item.retainedPostageSats),
+  })), plan.feeSats);
+  return {
+    action: 'manage_postage',
+    target: intent.target,
+    items,
+    feeSats: plan.feeSats.toString(),
+    fundingInputs: plan.inputs.filter((_input, index) => !protectedIndexes.has(index)).map((input) => ({
+      txid: input.txid, vout: input.vout, valueSats: input.valueSats.toString(),
+    })),
+    returnedBtcSats: recovery.recoveredSats.toString(),
+    netReturnedBtcSats: recovery.netRecoveredSats.toString(),
+  };
+}
+
+function ordinalBatchActionReviewFromPlan(plan: TransactionPlan): OrdinalBatchActionReview {
+  const intent = plan.policy.intent;
+  if (intent.kind !== 'ordinal_batch_transfer') throw new Error('ordinal batch intent is missing');
+  const selectedIds = intent.selections.map((selection) => selection.inscriptionId);
+  const selected = new Set(selectedIds);
+  if (selected.size !== selectedIds.length) throw new Error('ordinal batch selection is ambiguous');
+  const flowsById = new Map(plan.protectedSatFlow.map((flow) => [flow.inscriptionId, flow]));
+  if (flowsById.size !== selected.size || selectedIds.some((id) => !flowsById.has(id))) {
+    throw new Error('ordinal batch flow is incomplete');
+  }
+  const sourceInputIndexes = new Set(plan.protectedSatFlow.map((flow) => flow.inputIndex));
+  const postageOutputs = [...new Set(plan.protectedSatFlow.map((flow) => flow.outputIndex))]
+    .map((index) => ({ index, output: plan.outputs[index] }))
+    .filter((item): item is { index: number; output: PlanOutput } => item.output !== undefined);
+  const addresses = new Set(postageOutputs.map(({ output }) => output.address));
+  if (addresses.size !== 1 || addresses.values().next().value !== intent.recipient) {
+    throw new Error('ordinal batch destination is ambiguous');
+  }
+  const grouped = new Map<string, { flow: ProtectedSatFlow; inscriptionIds: string[] }>();
+  for (const id of selectedIds) {
+    const flow = flowsById.get(id)!;
+    const key = `${flow.inputIndex}:${flow.inputOffset}:${flow.outputIndex}:${flow.outputOffset}`;
+    const group = grouped.get(key) ?? { flow, inscriptionIds: [] };
+    group.inscriptionIds.push(id);
+    grouped.set(key, group);
+  }
+  const groups = [...grouped.values()]
+    .sort((a, b) => a.flow.outputIndex - b.flow.outputIndex ||
+      a.flow.inscriptionId.localeCompare(b.flow.inscriptionId))
+    .map(({ flow, inscriptionIds }) => {
+      const source = plan.inputs[flow.inputIndex];
+      const output = plan.outputs[flow.outputIndex];
+      if (!source || !output) throw new Error('ordinal batch group is invalid');
+      return {
+        inscriptionIds: [...inscriptionIds].sort((a, b) => a.localeCompare(b)),
+        source: { txid: source.txid, vout: source.vout, valueSats: source.valueSats.toString() },
+        satpoint: `${source.txid}:${source.vout}:${flow.inputOffset}`,
+        destinationOutputIndex: flow.outputIndex,
+        postageSats: output.valueSats.toString(),
+        travelsTogether: inscriptionIds.length > 1,
+      };
+    });
+  const fundingInputs = plan.inputs
+    .filter((_input, index) => !sourceInputIndexes.has(index))
+    .map((input) => ({ txid: input.txid, vout: input.vout, valueSats: input.valueSats.toString() }));
+  const returnedBtcSats = plan.outputs
+    .filter((output) => output.role === 'payment_change')
+    .reduce((sum, output) => sum + output.valueSats, 0n);
+  const aggregatePostageSats = postageOutputs.reduce((sum, item) => sum + item.output.valueSats, 0n);
+  return {
+    action: 'batch_transfer',
+    inscriptionIds: [...selectedIds],
+    inscriptionCount: selectedIds.length,
+    destination: {
+      address: intent.recipient,
+      ownership: postageOutputs.every(({ output }) => output.derivation !== undefined) ? 'wallet' : 'external',
+    },
+    groups,
+    aggregatePostageSats: aggregatePostageSats.toString(),
+    feeSats: plan.feeSats.toString(),
+    fundingInputs,
+    returnedBtcSats: returnedBtcSats.toString(),
+    requiresNonTaprootAcknowledgement: postageOutputs.some(({ output }) =>
+      !(output.scriptPubKey.startsWith('5120') && output.scriptPubKey.length === 68)),
+  };
+}
+
 // Cache parsing is deliberately structural; the plan hash is rechecked after
 // decrypt, making any accepted structural value immutable in practice.
 const bigintSchema = z.bigint().nonnegative();
@@ -478,9 +647,37 @@ const planIntentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('native_send'), account: z.number().int().nonnegative(), recipient: z.string(),
     amountSats: z.string().regex(/^(0|[1-9][0-9]*)$/), sendMax: z.boolean(),
     selectedOutpoints: z.array(outpointSchema).optional() }).strict(),
+  z.object({ kind: z.literal('native_batch_send'), account: z.number().int().nonnegative(),
+    recipients: z.array(z.object({
+      address: z.string().min(1).max(8 * 1024),
+      amountSats: z.string().regex(/^[1-9][0-9]*$/),
+    }).strict()).min(2).max(20),
+    selectedOutpoints: z.array(outpointSchema).optional() }).strict(),
   z.object({ kind: z.literal('ordinal_transfer'), account: z.number().int().nonnegative(),
     inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
     outpoint: outpointSchema, recipient: z.string() }).strict(),
+  z.object({ kind: z.literal('ordinal_batch_transfer'), account: z.number().int().nonnegative(),
+    recipient: z.string(), selections: z.array(z.object({
+      inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
+      outpoint: outpointSchema,
+      satpoint: z.string().regex(/^[0-9a-f]{64}:(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)$/),
+      classificationRevision: z.string().min(1),
+    }).strict()).min(1).max(16) }).strict(),
+  z.object({ kind: z.literal('ordinal_postage_manage'), account: z.number().int().nonnegative(),
+    selections: z.array(z.object({
+      inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
+      outpoint: outpointSchema,
+      satpoint: z.string().regex(/^[0-9a-f]{64}:(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)$/),
+      classificationRevision: z.string().min(1),
+    }).strict()).min(1).max(16),
+    target: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('common_546') }).strict(),
+      z.object({ type: z.literal('compatible_10000') }).strict(),
+      z.object({ type: z.literal('minimum_standard') }).strict(),
+      z.object({ type: z.literal('keep_current') }).strict(),
+      z.object({ type: z.literal('custom'), customSats: z.string().regex(/^(?:0|[1-9][0-9]*)$/) }).strict(),
+    ]),
+  }).strict(),
   z.object({ kind: z.literal('consolidation'), account: z.number().int().nonnegative(),
     selectedOutpoints: z.array(outpointSchema).min(1) }).strict(),
   z.object({ kind: z.literal('rbf'), txid: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
@@ -522,7 +719,7 @@ const commonPlanShape = {
   planId: z.string().min(1), createdAt: z.number().int().nonnegative(),
   expiresAt: z.number().int().positive(), network: z.enum(['mainnet','signet']),
   account: z.number().int().nonnegative(), kind: z.enum([
-    'native_send', 'ordinal_transfer', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
+    'native_send', 'native_batch_send', 'ordinal_transfer', 'ordinal_batch_transfer', 'ordinal_postage_manage', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
   ]),
   source: z.object({
     backend: z.string(), instanceId: z.string(), classificationRevision: z.string(),
@@ -584,6 +781,46 @@ export const transactionPlanSchema: z.ZodType<TransactionPlan> = z.object({
       path: ['policy', 'intent', 'account'],
       message: 'intent account metadata differs from plan',
     });
+  }
+  if (plan.policy.intent.kind === 'native_batch_send' &&
+      new Set(plan.policy.intent.recipients.map((item) => item.address)).size !==
+        plan.policy.intent.recipients.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['policy', 'intent', 'recipients'],
+      message: 'duplicate batch recipient',
+    });
+  }
+  if ((plan.policy.intent.kind === 'ordinal_batch_transfer' ||
+      plan.policy.intent.kind === 'ordinal_postage_manage') &&
+      new Set(plan.policy.intent.selections.map((item) => item.inscriptionId)).size !==
+        plan.policy.intent.selections.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['policy', 'intent', 'selections'],
+      message: 'duplicate inscription selection',
+    });
+  }
+  if (plan.policy.intent.kind === 'ordinal_batch_transfer' ||
+      plan.policy.intent.kind === 'ordinal_postage_manage') {
+    const selections = plan.policy.intent.selections;
+    try {
+      const canonical = canonicalOrdinalBatchSelections(selections);
+      if (canonical.some((selection, index) =>
+        selection.inscriptionId !== selections[index]?.inscriptionId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['policy', 'intent', 'selections'],
+          message: 'inscription selections are not canonical',
+        });
+      }
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['policy', 'intent', 'selections'],
+        message: error instanceof Error ? error.message : 'invalid inscription selection',
+      });
+    }
   }
   for (const [index, input] of plan.inputs.entries()) {
     if (input.ownership !== 'external' &&

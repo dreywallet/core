@@ -24,6 +24,7 @@ describe('op registry', () => {
         'vault.unlock',
         'vault.revealMnemonic',
         'vault.verifyBackup',
+        'vault.verifyFullRecovery',
         'backup.status',
         'address.receive',
         'paymentInstruction.resolve',
@@ -168,6 +169,45 @@ describe('op registry', () => {
     ]);
   });
 
+  it('accepts only 1 to 16 uniquely bound native ordinal batch selections', () => {
+    const request = {
+      kind: 'ordinal_batch_transfer' as const,
+      accountId: ACCOUNT_ID,
+      account: 0,
+      recipient: 'tb1pexample',
+      fee: { type: 'automatic' as const, tier: 'standard' as const },
+      expectedVaultId: 'vault-1',
+      expectedSessionId: '00000000-0000-4000-8000-000000000001',
+      selections: [{
+        inscriptionId: `${'1'.repeat(64)}i0`,
+        outpoint: { txid: 'a'.repeat(64), vout: 0 },
+        satpoint: `${'a'.repeat(64)}:0:7`,
+        classificationRevision: 'rev-1',
+      }],
+    };
+    const schema = OP_SCHEMAS['transaction.plan'].request;
+    expect(schema.safeParse(request).success).toBe(true);
+    expect(schema.safeParse({ ...request, selections: [] }).success).toBe(false);
+    expect(schema.safeParse({
+      ...request,
+      selections: Array.from({ length: 17 }, (_, index) => ({
+        ...request.selections[0],
+        inscriptionId: `${index.toString(16).padStart(64, '0')}i0`,
+      })),
+    }).success).toBe(false);
+    expect(schema.safeParse({
+      ...request,
+      selections: [request.selections[0], request.selections[0]],
+    }).success).toBe(false);
+    expect(schema.safeParse({
+      ...request,
+      selections: [
+        request.selections[0],
+        { ...request.selections[0], inscriptionId: `${'2'.repeat(64)}i0` },
+      ],
+    }).success).toBe(true);
+  });
+
   it('defaults portable account fields in older session snapshots', () => {
     const parsed = OP_SCHEMAS['session.snapshot'].response.parse({
       vaults: [],
@@ -277,6 +317,7 @@ describe('op registry', () => {
       items: [],
       nextCursor: null,
       reset: false,
+      historyComplete: true,
     }).success).toBe(true);
   });
 
@@ -330,6 +371,27 @@ describe('op registry', () => {
     expect(request.safeParse({ feeRateSatPerKvB: 471.5, ...session }).success).toBe(false);
     expect(request.safeParse({ feeRateSatPerKvB: 10_000_001, ...session }).success).toBe(false);
     expect(request.safeParse({ feeRateSatPerVb: 1, ...session }).success).toBe(false);
+  });
+
+  it('carries strict display-only inscription references on UTXO rows', () => {
+    const response = OP_SCHEMAS['utxo.list'].response;
+    const row = {
+      txid: 'a'.repeat(64), vout: 0, valueSats: '546', effectiveValueSats: '500',
+      accountId: ACCOUNT_ID, account: 0, lane: 'payment', path: "m/84'/0'/0'/0/0",
+      classification: 'inscribed', eligible: false, reasons: ['not_cardinal_clean'],
+      frozen: false, dustQuarantined: false, wrongLane: 'protected_wrong_address',
+      inscriptions: [{
+        inscriptionId: `${'b'.repeat(64)}i0`,
+        number: 42,
+        satpoint: `${'a'.repeat(64)}:0:0`,
+      }],
+      label: null,
+    };
+    expect(response.safeParse({ utxos: [row], privacyNotes: [] }).success).toBe(true);
+    expect(response.safeParse({
+      utxos: [{ ...row, inscriptions: [{ ...row.inscriptions[0], rawHtml: '<svg>' }] }],
+      privacyNotes: [],
+    }).success).toBe(false);
   });
 
   it('accepts exact fractional custom-fee text and rejects lossy or ambiguous forms', () => {

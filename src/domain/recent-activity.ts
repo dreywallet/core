@@ -190,6 +190,7 @@ export function annotateOrdinalFlowActivity(
       ...activityEntry,
       actionKind: direction === 'sent' ? 'ordinal_transfer' : 'ordinal_receive',
       inscriptionId: first.inscriptionId,
+      inscriptionIds: ordered.map((item) => item.inscriptionId),
       inscriptionNumber: first.number,
       inscriptionCount: ordered.length,
       ...(direction === 'received'
@@ -220,10 +221,31 @@ export function ordinalActionInscriptionId(
   if (plan?.kind === 'ordinal_transfer' && plan.policy.intent.kind === 'ordinal_transfer') {
     return plan.policy.intent.inscriptionId;
   }
+  if (plan?.kind === 'ordinal_batch_transfer' &&
+      plan.policy.intent.kind === 'ordinal_batch_transfer') {
+    return plan.policy.intent.selections[0]?.inscriptionId ?? null;
+  }
+  if (plan?.kind === 'ordinal_postage_manage' &&
+      plan.policy.intent.kind === 'ordinal_postage_manage') {
+    return plan.policy.intent.selections[0]?.inscriptionId ?? null;
+  }
   if (plan?.kind === 'rescue') {
     return plan.protectedSatFlow[0]?.inscriptionId ?? null;
   }
   return null;
+}
+
+export function ordinalActionInscriptionIds(
+  plan: StoredTransaction['plan'] | undefined,
+): string[] {
+  if ((plan?.kind === 'ordinal_batch_transfer' &&
+      plan.policy.intent.kind === 'ordinal_batch_transfer') ||
+      (plan?.kind === 'ordinal_postage_manage' &&
+      plan.policy.intent.kind === 'ordinal_postage_manage')) {
+    return plan.policy.intent.selections.map((selection) => selection.inscriptionId);
+  }
+  const id = ordinalActionInscriptionId(plan);
+  return id === null ? [] : [id];
 }
 
 /** Gateway-scanned history is authoritative over the broadcast-time journal. */
@@ -254,10 +276,12 @@ function journalState(
 function actionMetadata(transaction: JournalTransaction): Partial<Pick<
   RecentActivity,
   'actionKind' | 'addressDisplay' | 'bitcoinActionKind' | 'inscriptionId' |
-  'inscriptionNumber' | 'returnedBtcSats'
+  'inscriptionIds' | 'inscriptionNumber' | 'inscriptionCount' | 'returnedBtcSats'
 >> {
   const actionKind =
     transaction.kind === 'ordinal_transfer' ||
+    transaction.kind === 'ordinal_batch_transfer' ||
+    transaction.kind === 'ordinal_postage_manage' ||
     transaction.kind === 'rescue' ||
     transaction.kind === 'ordinal_sweep'
       ? transaction.kind
@@ -267,8 +291,7 @@ function actionMetadata(transaction: JournalTransaction): Partial<Pick<
     : null;
   const recipientAddresses = transaction.plan?.outputs
     .filter((output) =>
-      (output.role === 'recipient' || output.role === 'postage') &&
-      output.derivation === undefined)
+      (output.role === 'recipient' || output.role === 'postage') && output.derivation === undefined)
     .map((output) => output.address) ?? [];
   const uniqueRecipientAddresses = [...new Set(recipientAddresses)];
   const addressDisplay = uniqueRecipientAddresses.length === 1
@@ -278,7 +301,17 @@ function actionMetadata(transaction: JournalTransaction): Partial<Pick<
     return addressDisplay === null ? {} : { addressDisplay };
   }
   const inscriptionId = ordinalActionInscriptionId(transaction.plan);
-  const returnedBtcSats = actionKind === 'ordinal_sweep' && transaction.plan
+  const inscriptionIds = ordinalActionInscriptionIds(transaction.plan);
+  const returnedBtcSats = actionKind === 'ordinal_postage_manage' && transaction.plan
+    ? transaction.plan.protectedSatFlow.reduce((sum, flow) => {
+        const source = transaction.plan?.inputs[flow.inputIndex];
+        const retained = transaction.plan?.outputs[flow.outputIndex];
+        return sum + (source && retained && source.valueSats > retained.valueSats
+          ? source.valueSats - retained.valueSats
+          : 0n);
+      }, 0n).toString()
+    : (actionKind === 'ordinal_sweep' || actionKind === 'ordinal_batch_transfer') &&
+    transaction.plan
     ? transaction.plan.outputs
         .filter((output) => output.role === 'payment_change')
         .reduce((sum, output) => sum + output.valueSats, 0n)
@@ -301,6 +334,10 @@ function actionMetadata(transaction: JournalTransaction): Partial<Pick<
     addressDisplay,
     bitcoinActionKind,
     inscriptionId,
+    ...(inscriptionIds.length > 0 ? {
+      inscriptionIds,
+      inscriptionCount: inscriptionIds.length,
+    } : {}),
     inscriptionNumber,
     returnedBtcSats,
   };
@@ -361,6 +398,7 @@ export function annotateReceivedInscriptionActivity(
       ...entry,
       actionKind: 'ordinal_receive',
       inscriptionId: first.inscriptionId,
+      inscriptionIds: inscriptions.map((item) => item.inscriptionId),
       inscriptionNumber: first.number,
       inscriptionCount: inscriptions.length,
       receivedInscriptionCount: inscriptions.length,

@@ -298,6 +298,20 @@ describe('GatewayClient M7 signed endpoints', () => {
     const urls: string[] = [];
     const enrichedSnapshot = {
       ...snapshotTemplate,
+      activeScriptHashes: [
+        ...new Set([
+          ...(snapshotTemplate['utxos'] as Array<{ scriptHash: string }>).map((utxo) =>
+            utxo.scriptHash),
+          ...(snapshotTemplate['history'] as Array<{
+            fundedScriptHashes: string[];
+            spentScriptHashes: string[];
+          }>).flatMap((entry) => [
+            ...entry.fundedScriptHashes,
+            ...entry.spentScriptHashes,
+          ]),
+        ]),
+      ],
+      historyCoverage: { status: 'complete', limitedScriptHashes: [] },
       history: (snapshotTemplate['history'] as Array<Record<string, unknown>>).map((entry) => ({
         ...entry,
         activitySource: {
@@ -323,7 +337,7 @@ describe('GatewayClient M7 signed endpoints', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(urls).toEqual(['http://127.0.0.1:8080/v1/wallet/activity-snapshot']);
+    expect(urls).toEqual(['http://127.0.0.1:8080/v1/wallet/scan-snapshot']);
     if (result.ok) {
       expect(result.value.history[0]?.activitySource).toEqual({
         inputCount: 1,
@@ -341,8 +355,8 @@ describe('GatewayClient M7 signed endpoints', () => {
       urls.push(String(input));
       bodies.push(JSON.parse(String(init?.body)));
       calls += 1;
-      if (calls === 1) return new Response('not found', { status: 404 });
-      if (calls < 4) return new Response('catching up', { status: 503 });
+      if (calls <= 2) return new Response('not found', { status: 404 });
+      if (calls < 5) return new Response('catching up', { status: 503 });
       const requestNonce = new Headers(init?.headers).get(NONCE_HEADER) ?? '';
       return new Response(
         signTestBody({ ...snapshotTemplate, requestNonce }, keypair).slice().buffer,
@@ -364,15 +378,22 @@ describe('GatewayClient M7 signed endpoints', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(calls).toBe(4);
-    expect(urls[0]).toBe('http://127.0.0.1:8080/v1/wallet/activity-snapshot');
-    expect(urls.slice(1)).toEqual([
+    expect(calls).toBe(5);
+    expect(urls.slice(0, 2)).toEqual([
+      'http://127.0.0.1:8080/v1/wallet/scan-snapshot',
+      'http://127.0.0.1:8080/v1/wallet/activity-snapshot',
+    ]);
+    expect(urls.slice(2)).toEqual([
       'http://127.0.0.1:8080/v1/wallet/snapshot',
       'http://127.0.0.1:8080/v1/wallet/snapshot',
       'http://127.0.0.1:8080/v1/wallet/snapshot',
     ]);
-    expect(bodies[0]).toMatchObject({ includeOrdinalFlow: true });
-    expect(bodies.slice(1)).toEqual(Array.from({ length: 3 }, () => ({
+    expect(bodies.slice(0, 2)).toEqual(Array.from({ length: 2 }, () => ({
+      network: 'signet',
+      scriptHashes: snapshotTemplate['requestedScriptHashes'],
+      includeOrdinalFlow: true,
+    })));
+    expect(bodies.slice(2)).toEqual(Array.from({ length: 3 }, () => ({
       network: 'signet',
       scriptHashes: snapshotTemplate['requestedScriptHashes'],
     })));

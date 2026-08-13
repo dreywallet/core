@@ -160,6 +160,7 @@ export type GatewayProtocolVersion = 1 | 2;
 export const scriptHashSchema = hexIdSchema;
 
 export const SNAPSHOT_MAX_SCRIPT_HASHES = 200;
+export const SNAPSHOT_MAX_HISTORY = 1_000;
 export const CLASSIFY_MAX_OUTPOINTS = 200;
 
 export const outpointSchema = z
@@ -959,6 +960,148 @@ export const walletSnapshotResponseSchema = signedEnvelopeFieldsSchema
     }
   });
 export type WalletSnapshotResponse = z.infer<typeof walletSnapshotResponseSchema>;
+
+/**
+ * Coverage for the bounded account-scan route. `partial` is positive metadata:
+ * UTXOs are still complete and independently verified, while some transaction
+ * history could not be returned within the reviewed response/backend bounds.
+ */
+export const historyCoverageSchema = z
+  .object({
+    status: z.enum(['complete', 'partial']),
+    limitedScriptHashes: z.array(scriptHashSchema),
+  })
+  .strict()
+  .superRefine((coverage, ctx) => {
+    if (new Set(coverage.limitedScriptHashes).size !== coverage.limitedScriptHashes.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['limitedScriptHashes'],
+        message: 'limited script hashes must be unique',
+      });
+    }
+    if (coverage.status === 'complete' && coverage.limitedScriptHashes.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['status'],
+        message: 'complete history cannot contain limited scripts',
+      });
+    }
+  });
+export type HistoryCoverage = z.infer<typeof historyCoverageSchema>;
+
+export const walletScanSnapshotResponseSchema = signedEnvelopeFieldsSchema
+  .extend({
+    requestedScriptHashes: z.array(scriptHashSchema),
+    utxos: z.array(snapshotUtxoSchema),
+    history: z.array(snapshotHistoryEntrySchema).max(SNAPSHOT_MAX_HISTORY),
+    activeScriptHashes: z.array(scriptHashSchema),
+    historyCoverage: historyCoverageSchema,
+  })
+  .strict()
+  .superRefine((response, ctx) => {
+    const requested = new Set(response.requestedScriptHashes);
+    const active = new Set(response.activeScriptHashes);
+    if (requested.size !== response.requestedScriptHashes.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requestedScriptHashes'],
+        message: 'requested script hashes must be unique',
+      });
+    }
+    if (active.size !== response.activeScriptHashes.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['activeScriptHashes'],
+        message: 'active script hashes must be unique',
+      });
+    }
+    for (const [index, hash] of response.activeScriptHashes.entries()) {
+      if (!requested.has(hash)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['activeScriptHashes', index],
+          message: 'active script hash was not requested',
+        });
+      }
+    }
+    for (const [index, hash] of response.historyCoverage.limitedScriptHashes.entries()) {
+      if (!requested.has(hash)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['historyCoverage', 'limitedScriptHashes', index],
+          message: 'limited script hash was not requested',
+        });
+      }
+      if (!active.has(hash)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['historyCoverage', 'limitedScriptHashes', index],
+          message: 'a history-limited script must be active',
+        });
+      }
+    }
+    const responseHashes: Array<{ path: (string | number)[]; hash: string }> = [];
+    response.utxos.forEach((utxo, index) => {
+      responseHashes.push({ path: ['utxos', index, 'scriptHash'], hash: utxo.scriptHash });
+    });
+    response.history.forEach((entry, index) => {
+      entry.fundedScriptHashes.forEach((hash, hashIndex) => {
+        responseHashes.push({
+          path: ['history', index, 'fundedScriptHashes', hashIndex],
+          hash,
+        });
+      });
+      entry.spentScriptHashes.forEach((hash, hashIndex) => {
+        responseHashes.push({
+          path: ['history', index, 'spentScriptHashes', hashIndex],
+          hash,
+        });
+      });
+    });
+    for (const { path, hash } of responseHashes) {
+      if (!requested.has(hash)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: 'response script hash was not requested',
+        });
+      }
+      if (!active.has(hash)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: 'response activity must be represented by an active script hash',
+        });
+      }
+    }
+    const outpoints = response.utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
+    if (new Set(outpoints).size !== outpoints.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['utxos'],
+        message: 'UTXO outpoints must be unique',
+      });
+    }
+    const historyTxids = response.history.map((entry) => entry.txid);
+    if (new Set(historyTxids).size !== historyTxids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['history'],
+        message: 'history transaction ids must be unique',
+      });
+    }
+    const edgeCount = response.history.reduce((total, entry) =>
+      total + (entry.ordinalFlow?.kind === 'complete' ? entry.ordinalFlow.edges.length : 0), 0);
+    if (edgeCount > SNAPSHOT_MAX_ORDINAL_FLOW_EDGES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['history'],
+        message: 'bounded scan ordinal flow exceeds response edge budget',
+      });
+    }
+  });
+export type WalletScanSnapshotResponse = z.infer<typeof walletScanSnapshotResponseSchema>;
 
 export const walletActivitySnapshotResponseSchema = walletSnapshotResponseSchema
   .superRefine((response, ctx) => {

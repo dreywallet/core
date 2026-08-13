@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { MAX_ACCOUNT_INDEX } from '../domain/accounts/limits';
 import { utxoLabelSchema } from '../domain/classification/labels';
-import { voutSchema } from '../domain/gateway/contract';
+import { inscriptionRefSchema, voutSchema } from '../domain/gateway/contract';
 import { parseCustomFeeRate } from '../domain/transactions/fees';
+import { parseCanonicalSatpoint } from '../domain/ordinals/satpoint';
 
 const hexId = z.string().regex(/^[0-9a-f]{64}$/);
 const sats = z.string().regex(/^(0|[1-9][0-9]*)$/);
@@ -36,6 +37,14 @@ const nativePlan = z.object({
   recipient: z.string().min(1).max(8 * 1024), amountSats: sats, sendMax: z.boolean(), fee: feePolicy,
   selectedOutpoints: z.array(outpoint).optional(), ...session,
 }).strict();
+const nativeBatchPlan = z.object({
+  kind: z.literal('native_batch_send'), accountId: publicAccountId,
+  account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+  recipients: z.array(z.object({
+    address: z.string().min(1).max(8 * 1024), amountSats: sats.refine((value) => value !== '0'),
+  }).strict()).min(2).max(20),
+  fee: feePolicy, selectedOutpoints: z.array(outpoint).optional(), ...session,
+}).strict();
 const ordinalTransferPlan = z.object({
   kind: z.literal('ordinal_transfer'),
   accountId: publicAccountId,
@@ -43,6 +52,35 @@ const ordinalTransferPlan = z.object({
   inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
   outpoint,
   recipient: z.string().min(1),
+  fee: feePolicy,
+  ...session,
+}).strict();
+const ordinalBatchSelection = z.object({
+  inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
+  outpoint,
+  satpoint: z.string().regex(/^[0-9a-f]{64}:(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)$/),
+  classificationRevision: z.string().min(1),
+}).strict();
+const ordinalBatchTransferPlan = z.object({
+  kind: z.literal('ordinal_batch_transfer'),
+  accountId: publicAccountId,
+  account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+  selections: z.array(ordinalBatchSelection).min(1).max(16),
+  recipient: z.string().min(1),
+  fee: feePolicy,
+  ...session,
+}).strict();
+const ordinalPostageManagePlan = z.object({
+  kind: z.literal('ordinal_postage_manage'), accountId: publicAccountId,
+  account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+  selections: z.array(ordinalBatchSelection).min(1).max(16),
+  target: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('common_546') }).strict(),
+    z.object({ type: z.literal('compatible_10000') }).strict(),
+    z.object({ type: z.literal('minimum_standard') }).strict(),
+    z.object({ type: z.literal('keep_current') }).strict(),
+    z.object({ type: z.literal('custom'), customSats: sats }).strict(),
+  ]),
   fee: feePolicy,
   ...session,
 }).strict();
@@ -62,13 +100,35 @@ const recoveryPlan = <K extends 'rescue' | 'ordinal_sweep'>(kind: K) => z.object
 
 export const transactionPlanRequestSchema = z.discriminatedUnion('kind', [
   nativePlan,
+  nativeBatchPlan,
   ordinalTransferPlan,
+  ordinalBatchTransferPlan,
+  ordinalPostageManagePlan,
   consolidationPlan,
   accelerationPlan('rbf'),
   accelerationPlan('cpfp'),
   recoveryPlan('rescue'),
   recoveryPlan('ordinal_sweep'),
-]);
+]).superRefine((request, context) => {
+  if (request.kind === 'native_batch_send' &&
+      new Set(request.recipients.map((item) => item.address)).size !== request.recipients.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['recipients'], message: 'duplicate batch recipient' });
+  }
+  if (request.kind !== 'ordinal_batch_transfer' && request.kind !== 'ordinal_postage_manage') return;
+  if (new Set(request.selections.map((item) => item.inscriptionId)).size !== request.selections.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['selections'], message: 'duplicate inscription selection' });
+  }
+  for (const [index, selection] of request.selections.entries()) {
+    const parsed = parseCanonicalSatpoint(selection.satpoint);
+    if (!parsed || parsed.txid !== selection.outpoint.txid || parsed.vout !== selection.outpoint.vout) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['selections', index, 'satpoint'],
+        message: 'inscription satpoint differs from bound outpoint',
+      });
+    }
+  }
+});
 
 const reviewOutput = z.object({
   address: z.string(), valueSats: sats,
@@ -143,9 +203,58 @@ const ordinalActionReview = z.object({
   returnedBtcSats: sats,
   requiresNonTaprootAcknowledgement: z.boolean(),
 }).strict();
+const ordinalBatchActionReview = z.object({
+  action: z.literal('batch_transfer'),
+  inscriptionIds: z.array(z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/)).min(1).max(16),
+  inscriptionCount: z.number().int().min(1).max(16),
+  destination: z.object({ address: z.string(), ownership: z.enum(['external', 'wallet']) }).strict(),
+  groups: z.array(z.object({
+    inscriptionIds: z.array(z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/)).min(1).max(16),
+    source: z.object({ txid: hexId, vout: voutSchema, valueSats: sats }).strict(),
+    satpoint: z.string().regex(/^[0-9a-f]{64}:(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)$/),
+    destinationOutputIndex: z.number().int().nonnegative(),
+    postageSats: sats,
+    travelsTogether: z.boolean(),
+  }).strict()).min(1).max(16),
+  aggregatePostageSats: sats,
+  feeSats: sats,
+  fundingInputs: z.array(z.object({ txid: hexId, vout: voutSchema, valueSats: sats }).strict()),
+  returnedBtcSats: sats,
+  requiresNonTaprootAcknowledgement: z.boolean(),
+}).strict().superRefine((review, context) => {
+  if (review.inscriptionCount !== review.inscriptionIds.length ||
+      new Set(review.inscriptionIds).size !== review.inscriptionIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['inscriptionCount'], message: 'batch inscription count differs' });
+  }
+  const groupedIds = review.groups.flatMap((group) => group.inscriptionIds);
+  if (groupedIds.length !== review.inscriptionCount ||
+      new Set(groupedIds).size !== groupedIds.length ||
+      groupedIds.some((id) => !review.inscriptionIds.includes(id))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['groups'], message: 'batch review groups are incomplete' });
+  }
+});
+const ordinalPostageActionReview = z.object({
+  action: z.literal('manage_postage'),
+  target: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('common_546') }).strict(),
+    z.object({ type: z.literal('compatible_10000') }).strict(),
+    z.object({ type: z.literal('minimum_standard') }).strict(),
+    z.object({ type: z.literal('keep_current') }).strict(),
+    z.object({ type: z.literal('custom'), customSats: sats }).strict(),
+  ]),
+  items: z.array(z.object({
+    inscriptionId: z.string().regex(/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/),
+    source: z.object({ txid: hexId, vout: voutSchema, valueSats: sats }).strict(),
+    currentPostageSats: sats, retainedPostageSats: sats, recoveredSats: sats, addedSats: sats,
+  }).strict()).min(1).max(16),
+  feeSats: sats,
+  fundingInputs: z.array(z.object({ txid: hexId, vout: voutSchema, valueSats: sats }).strict()),
+  returnedBtcSats: sats,
+  netReturnedBtcSats: sats,
+}).strict();
 export const transactionReviewSchema = z.object({
   kind: z.enum([
-    'native_send', 'ordinal_transfer', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
+    'native_send', 'native_batch_send', 'ordinal_transfer', 'ordinal_batch_transfer', 'ordinal_postage_manage', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
   ]),
   network: z.enum(['mainnet', 'signet']), accountId: publicAccountId, recipients: z.array(reviewOutput),
   inputs: z.array(z.object({ txid: hexId, vout: voutSchema, valueSats: sats,
@@ -159,7 +268,7 @@ export const transactionReviewSchema = z.object({
   effectCount: z.number().int().nonnegative(),
   inscriptions: z.array(inscriptionReviewItem).max(64),
   requiresPreviewAcknowledgement: z.boolean(),
-  ordinalAction: ordinalActionReview.nullable().default(null),
+  ordinalAction: z.union([ordinalActionReview, ordinalBatchActionReview, ordinalPostageActionReview]).nullable().default(null),
 }).strict();
 
 export const transactionPlanResultSchema = z.object({
@@ -212,6 +321,8 @@ export const utxoListResultSchema = z.object({ utxos: z.array(z.object({
   classification: z.string(), eligible: z.boolean(), reasons: z.array(z.string()), frozen: z.boolean(),
   dustQuarantined: z.boolean(),
   wrongLane: z.enum(['normal','protected_wrong_address','reserved_ordinal_lane_btc']),
+  /** Display-only inscription identities attached to this exact outpoint. */
+  inscriptions: z.array(inscriptionRefSchema),
   /** §14.4 local label; null when unlabeled. Never leaves the device. */
   label: utxoLabelSchema.nullable(),
 }).strict()),
@@ -226,6 +337,8 @@ export const transactionStatusResultSchema = z.object({
   planId: z.string(), kind: z.string(), txid: hexId, createdAt: z.number().int().nonnegative(),
   amountSats: sats, feeSats: sats, status: z.string(), detail: z.string().nullable(),
   parentTxid: hexId.nullable(), replacesTxid: hexId.nullable(), recovering: z.boolean(),
+  recommendedAcceleration: z.enum(['rbf', 'cpfp']).nullable().optional().default(null),
+  accelerationUnavailableReason: z.string().nullable().optional().default(null),
   }).strict()),
 }).strict();
 

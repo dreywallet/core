@@ -9,6 +9,11 @@ export interface ParsedSatpoint {
   offset: bigint;
 }
 
+export interface InscriptionAtSatpoint {
+  inscriptionId: string;
+  satpoint: string;
+}
+
 /**
  * Parse the one canonical satpoint representation accepted by gateway
  * contracts, transaction planning, and transaction analysis.
@@ -26,4 +31,26 @@ export function parseCanonicalSatpoint(satpoint: string): ParsedSatpoint | null 
     vout,
     offset,
   };
+}
+
+/**
+ * Pick the inscription whose sat lands first in the output. Invalid satpoints
+ * sort after valid ones, with the inscription id providing a stable tie-break.
+ * This is presentation-only: it never selects transaction inputs or assets.
+ */
+export function primaryInscriptionForPreview<T extends InscriptionAtSatpoint>(
+  inscriptions: readonly T[],
+): T | null {
+  let selected: T | null = null;
+  let selectedOffset: bigint | null = null;
+  for (const inscription of inscriptions) {
+    const offset = parseCanonicalSatpoint(inscription.satpoint)?.offset ?? null;
+    if (selected === null ||
+        (offset !== null && (selectedOffset === null || offset < selectedOffset)) ||
+        (offset === selectedOffset && inscription.inscriptionId < selected.inscriptionId)) {
+      selected = inscription;
+      selectedOffset = offset;
+    }
+  }
+  return selected;
 }

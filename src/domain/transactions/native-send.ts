@@ -122,6 +122,28 @@ export type NativeSendCandidateOutcome =
   | { ok: true; candidate: NativeSendCandidate }
   | { ok: false; reason: NativeSendCandidateFailure };
 
+export interface NativeBatchRecipient {
+  recipient: ResolvedPayableAddress;
+  amountSats: bigint;
+}
+
+export interface NativeBatchSendCandidateRequest extends Omit<
+  NativeSendCandidateRequest,
+  'recipient' | 'amountSats' | 'sendMax'
+> {
+  recipients: readonly NativeBatchRecipient[];
+}
+
+export type NativeBatchSendCandidateFailure =
+  | CoinSelectionFailure
+  | 'dust'
+  | 'duplicate_recipient'
+  | 'invalid_recipient_count';
+
+export type NativeBatchSendCandidateOutcome =
+  | { ok: true; candidate: NativeSendCandidate }
+  | { ok: false; reason: NativeBatchSendCandidateFailure };
+
 /**
  * Pure ordinary-send construction. Reservation, key access, storage and RPC
  * mapping remain consumer responsibilities; every wallet semantic is shared.
@@ -175,6 +197,89 @@ export function buildNativeSendCandidate(
   if (selection.recipientSats < scriptDustSats(request.recipient.scriptPubKey)) {
     return { ok: false, reason: 'dust' };
   }
+  if (selection.changeSats > 0n) {
+    outputs.push({
+      address: request.changeOutput.address,
+      scriptPubKey: request.changeOutput.scriptPubKey,
+      valueSats: selection.changeSats,
+      role: 'payment_change',
+      derivation: request.changeOutput.derivation,
+    });
+  }
+  return {
+    ok: true,
+    candidate: {
+      accountId: request.accountId,
+      account: request.account,
+      inputs,
+      outputs,
+      feeSats: selection.feeSats,
+      vsize: selection.vsize,
+      protectedSatFlow: [],
+      rbf: true,
+      parentTxid: null,
+      replacesTxid: null,
+    },
+  };
+}
+
+/** Pure ordered 2..20-recipient payment construction. Batch sends never support Send Max. */
+export function buildNativeBatchSendCandidate(
+  request: NativeBatchSendCandidateRequest,
+): NativeBatchSendCandidateOutcome {
+  if (request.recipients.length < 2 || request.recipients.length > 20) {
+    return { ok: false, reason: 'invalid_recipient_count' };
+  }
+  const scripts = new Set<string>();
+  let total = 0n;
+  for (const item of request.recipients) {
+    if (scripts.has(item.recipient.scriptPubKey)) return { ok: false, reason: 'duplicate_recipient' };
+    scripts.add(item.recipient.scriptPubKey);
+    if (item.amountSats <= 0n || item.amountSats < scriptDustSats(item.recipient.scriptPubKey)) {
+      return { ok: false, reason: 'dust' };
+    }
+    total += item.amountSats;
+  }
+  if (request.changeOutput.role !== 'payment_change' ||
+      request.changeOutput.derivation.accountId !== request.accountId ||
+      request.changeOutput.derivation.account !== request.account ||
+      request.changeOutput.derivation.lane !== 'payment' ||
+      request.changeOutput.derivation.chain !== 1 ||
+      scriptKind(request.changeOutput.scriptPubKey) !== 'p2wpkh') {
+    throw new Error('invalid native-batch-send payment change output');
+  }
+  let selection;
+  try {
+    selection = selectCoins({
+      utxos: request.utxos,
+      eligibility: request.eligibility,
+      accountId: request.accountId,
+      account: request.account,
+      feeRate: request.feeRate,
+      targetSats: total,
+      recipientScripts: request.recipients.map((item) => item.recipient.scriptPubKey),
+      changeScript: request.changeOutput.scriptPubKey,
+      sendMax: false,
+      ...(request.selectedOutpoints ? { selectedOutpoints: request.selectedOutpoints } : {}),
+      ...(request.labelGroupByOutpoint
+        ? { labelGroupByOutpoint: request.labelGroupByOutpoint }
+        : {}),
+    });
+  } catch (error) {
+    if (error instanceof CoinSelectionError) return { ok: false, reason: error.reason };
+    throw error;
+  }
+  const inputs = selection.inputs.map((utxo) => inputFromUtxo(
+    utxo,
+    request.deriveInput(utxo),
+    sequenceForInput('native_batch_send'),
+  ));
+  const outputs: PlanOutput[] = request.recipients.map((item) => ({
+    address: item.recipient.address,
+    scriptPubKey: item.recipient.scriptPubKey,
+    valueSats: item.amountSats,
+    role: 'recipient',
+  }));
   if (selection.changeSats > 0n) {
     outputs.push({
       address: request.changeOutput.address,

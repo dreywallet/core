@@ -6,6 +6,7 @@ import {
   activityRevision,
   mergeRecentActivity,
   ordinalActionInscriptionId,
+  ordinalActionInscriptionIds,
   paginateActivity,
   projectRecentActivity,
   propagateActivityEvidence,
@@ -255,6 +256,18 @@ describe('recent wallet activity', () => {
     });
   });
 
+  it('does not present wallet-owned ordinal destinations as external sends', () => {
+    const ownAddress = 'bc1powned';
+    const ownPlan = {
+      outputs: [{ role: 'postage', address: ownAddress, derivation: { account: 0 } }],
+      protectedSatFlow: [{ inscriptionId: `${'4'.repeat(64)}i0` }],
+      policy: { intent: { kind: 'rescue' } },
+      inputs: [],
+    } as unknown as StoredTransaction['plan'];
+    expect(mergeRecentActivity([], [{ ...transaction(), kind: 'rescue', plan: ownPlan }])[0])
+      .toMatchObject({ addressDisplay: null });
+  });
+
   it('de-duplicates by txid and lets authoritative gateway history replace the journal view', () => {
     const scanned = history({
       height: 959_200,
@@ -490,5 +503,40 @@ describe('recent wallet activity', () => {
       inscriptionId,
       inscriptionNumber: 444,
     });
+  });
+
+  it('projects one atomic batch tx with ordered unique inscription IDs', () => {
+    const inscriptionIds = [`${'1'.repeat(64)}i0`, `${'2'.repeat(64)}i0`];
+    const plan = {
+      version: 4,
+      kind: 'ordinal_batch_transfer',
+      policy: { intent: {
+        kind: 'ordinal_batch_transfer',
+        account: 0,
+        recipient: 'tb1ptest',
+        selections: inscriptionIds.map((inscriptionId, index) => ({
+          inscriptionId,
+          outpoint: { txid: '1'.repeat(64), vout: 0 },
+          satpoint: `${'1'.repeat(64)}:0:${index}`,
+          classificationRevision: 'rev-1',
+        })),
+      } },
+      outputs: [{ role: 'postage', address: 'tb1ptest', valueSats: 20_000n }],
+      inputs: [],
+      protectedSatFlow: [],
+      inscriptionPreviews: { items: [] },
+    } as unknown as StoredTransaction['plan'];
+    const result = mergeRecentActivity([], [{
+      ...transaction(),
+      kind: 'ordinal_batch_transfer',
+      plan,
+    }]);
+    expect(result[0]).toMatchObject({
+      actionKind: 'ordinal_batch_transfer',
+      inscriptionId: inscriptionIds[0],
+      inscriptionIds,
+      inscriptionCount: 2,
+    });
+    expect(ordinalActionInscriptionIds(plan)).toEqual(inscriptionIds);
   });
 });

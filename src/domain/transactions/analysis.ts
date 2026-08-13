@@ -19,6 +19,7 @@ import type {
 } from './plan';
 import type { Network } from '../keys/derivation';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
+import { isAuthoritativeCardinalClean } from '../gateway/contract';
 
 export type AnalysisTransactionKind = TransactionKind |
   'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt';
@@ -312,7 +313,9 @@ function inscriptionEffects(
         context.marketplace.commitment.selectedInputIndexes.includes(inputIndex) &&
         outputIndex === inputIndex;
       if (!analyzedOutput || !output || analyzedOutput.ownership === 'unproven' ||
-          (analyzedOutput.ownership === 'wallet' && output.derivation?.lane !== 'ordinals' && !saleLeg)) {
+          (analyzedOutput.ownership === 'wallet' && output.derivation?.lane !== 'ordinals' &&
+            !saleLeg && (context.kind !== 'ordinal_batch_transfer' ||
+              output.derivation?.lane === 'payment'))) {
         violations.push({ code: 'inscription_effect_mismatch', inputIndex, outputIndex });
         continue;
       }
@@ -499,7 +502,9 @@ function analyzeParsed(
     (context.kind === 'rescue' || context.kind === 'ordinal_transfer' ||
       context.kind === 'provider_ordinal_transfer') &&
     protectedInputIndexes.length === 1;
-  if (protectedInputIndexes.length > 0 && !rescueProtected) {
+  const batchProtected = (context.kind === 'ordinal_batch_transfer' ||
+    context.kind === 'ordinal_postage_manage') && protectedInputIndexes.length > 0;
+  if (protectedInputIndexes.length > 0 && !rescueProtected && !batchProtected) {
     const permitted = new Set(context.marketplace?.permittedProtectedInputIndexes ?? []);
     for (const inputIndex of protectedInputIndexes) {
       const protectedInput = context.inputs[inputIndex]!;
@@ -573,6 +578,61 @@ function analyzeParsed(
       protectedValueExposedToFees = protectedInput.valueSats;
     }
   }
+  if (batchProtected) {
+    const protectedPrefix = protectedInputIndexes.every((inputIndex, index) => inputIndex === index);
+    for (const inputIndex of protectedInputIndexes) {
+      const protectedInput = context.inputs[inputIndex]!;
+      const expectedIds = new Set(protectedInput.classification.inscriptions.map((item) => item.inscriptionId));
+      const flows = context.protectedSatFlow.filter((flow) => flow.inputIndex === inputIndex);
+      const flowIds = new Set(flows.map((flow) => flow.inscriptionId));
+      const sourceValid = protectedInput.classification.inscriptions.length > 0 &&
+        protectedInput.classification.confidence === 'authoritative' &&
+        !protectedInput.classification.unsupportedAssetDetected &&
+        !protectedInput.classification.satRanges?.some((range) =>
+          range.rarity !== undefined && range.rarity !== 'common') &&
+        flows.length === protectedInput.classification.inscriptions.length &&
+        flowIds.size === expectedIds.size && [...flowIds].every((id) => expectedIds.has(id)) &&
+        flows.every((flow) => {
+          const output = context.outputs[flow.outputIndex];
+          const analyzedOutput = outputs[flow.outputIndex];
+          const inputPosition = context.inputs.slice(0, flow.inputIndex)
+            .reduce((sum, input) => sum + input.valueSats, 0n) + flow.inputOffset;
+          const outputPosition = context.outputs.slice(0, flow.outputIndex)
+            .reduce((sum, item) => sum + item.valueSats, 0n) + flow.outputOffset;
+          return output?.role === 'postage' && analyzedOutput?.ownership !== 'unproven' &&
+            output.valueSats >= scriptDustSats(output.scriptPubKey) &&
+            flow.inputOffset >= 0n && flow.inputOffset < protectedInput.valueSats &&
+            flow.outputOffset >= 0n && flow.outputOffset < output.valueSats &&
+            inputPosition === outputPosition && expectedIds.has(flow.inscriptionId);
+        });
+      if (!sourceValid) {
+        violations.push({ code: 'protected_asset_misuse', inputIndex });
+        protectedValueExposedToFees += protectedInput.valueSats;
+      }
+    }
+    if (!protectedPrefix && protectedInputIndexes.length > 0) {
+      // A clean input before a protected one changes that source's absolute
+      // FIFO position; attach the ordering failure to the first protected input.
+      violations.push({ code: 'protected_asset_misuse', inputIndex: protectedInputIndexes[0]! });
+      protectedValueExposedToFees += protectedInputIndexes.reduce(
+        (sum, inputIndex) => sum + context.inputs[inputIndex]!.valueSats,
+        0n,
+      );
+    }
+    for (let inputIndex = protectedInputIndexes.length; inputIndex < context.inputs.length; inputIndex += 1) {
+      const funding = context.inputs[inputIndex]!;
+      if (funding.derivation?.lane !== 'payment' || !isAuthoritativeCardinalClean(funding.classification)) {
+        violations.push({ code: 'unsafe_input_classification', inputIndex });
+      }
+    }
+    for (let outputIndex = 0; outputIndex < context.outputs.length; outputIndex += 1) {
+      const output = context.outputs[outputIndex]!;
+      if (output.role === 'payment_change' &&
+          (output.derivation?.lane !== 'payment' || outputs[outputIndex]?.ownership !== 'wallet')) {
+        violations.push({ code: 'change_ownership_mismatch', outputIndex });
+      }
+    }
+  }
 
   const inputTotal = context.inputs.reduce((sum, input) => sum + input.valueSats, 0n);
   const outputTotal = outputs.reduce((sum, output) => sum + output.valueSats, 0n);
@@ -598,6 +658,8 @@ function analyzeParsed(
   // instead of burying it in a warning users learn to dismiss. high_absolute_fee
   // still covers a genuinely extortionate fee.
   const postageIsNotPrincipal = context.kind === 'ordinal_transfer' ||
+    context.kind === 'ordinal_batch_transfer' ||
+    context.kind === 'ordinal_postage_manage' ||
     context.kind === 'rescue' || context.kind === 'ordinal_sweep' ||
     context.kind === 'provider_ordinal_transfer';
   if (!postageIsNotPrincipal && sent > 0n && feeSats * 10n > sent) {

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   OutpointsClassifyResponse,
-  WalletSnapshotResponse,
+  WalletScanSnapshotResponse,
 } from '../../src/domain/gateway/contract';
 import { scanUnit, type ScanUnitPorts } from '../../src/scan/scan-engine';
 import type { ScanUnit } from '../../src/scan/scan-state';
@@ -34,7 +34,7 @@ const hashAt = (chain: 0 | 1, index: number) =>
 const txidAt = (index: number) => `${index.toString(16).padStart(4, '0')}`.padEnd(64, 'f');
 const SCRIPT = '0014' + 'b'.repeat(40);
 
-type SnapshotUtxo = WalletSnapshotResponse['utxos'][number];
+type SnapshotUtxo = WalletScanSnapshotResponse['utxos'][number];
 type ClassifyBody = Pick<OutpointsClassifyResponse, 'classifications' | 'unknownOutpoints'>;
 
 interface FakeOptions {
@@ -49,6 +49,11 @@ interface FakeOptions {
   /** Corrupt the echoed requestedScriptHashes (misrouted-response simulation). */
   echoRequested?: (sent: string[]) => string[];
   mutateSnapshotUtxos?: (utxos: SnapshotUtxo[]) => SnapshotUtxo[];
+  /** Used-address evidence that does not depend on a returned UTXO/history row. */
+  activeEvidenceExt?: number[];
+  historyPartial?: boolean;
+  includeFundingHistory?: boolean;
+  snapshotFailure?: { reason: 'http'; httpStatus: number };
   mutateClassify?: (body: ClassifyBody) => ClassifyBody;
 }
 
@@ -57,6 +62,7 @@ function makePorts(options: FakeOptions) {
   const ordinalFlowRequests: Array<boolean | undefined> = [];
   let cancelled = false;
   const activeByHash = new Map(options.activeExt.map((i) => [hashAt(0, i), i]));
+  const activeEvidence = new Set((options.activeEvidenceExt ?? []).map((i) => hashAt(0, i)));
   const ports: ScanUnitPorts = {
     network: 'signet',
     hashesFor: (_unit, chain, from, to) =>
@@ -74,6 +80,9 @@ function makePorts(options: FakeOptions) {
         snapshotRequests.length >= options.cancelAfterSnapshots
       ) {
         cancelled = true;
+      }
+      if (options.snapshotFailure) {
+        return Promise.resolve({ ok: false as const, ...options.snapshotFailure });
       }
       const revision =
         options.snapshotRevisions?.[snapshotRequests.length - 1] ??
@@ -93,13 +102,38 @@ function makePorts(options: FakeOptions) {
           height,
           fundingSpendsOnlyRequested: false,
         }));
-      const value: WalletSnapshotResponse = {
+      const activeScriptHashes = req.scriptHashes.filter((hash) =>
+        activeByHash.has(hash) || activeEvidence.has(hash));
+      const history = options.includeFundingHistory
+        ? baseUtxos.map((utxo) => ({
+            txid: utxo.txid,
+            height: utxo.height,
+            timestamp: null,
+            fundedScriptHashes: [utxo.scriptHash],
+            spentScriptHashes: [],
+            deltaSats: utxo.valueSats,
+            replacesTxid: null,
+            replacedByTxid: null,
+            confirmationState: utxo.height === null ? 'mempool' as const : 'confirmed' as const,
+            feeSats: null,
+            vsize: null,
+            replaceable: null,
+            packageFeeSats: null,
+            packageVsize: null,
+            cpfpEligible: false,
+          }))
+        : [];
+      const value: WalletScanSnapshotResponse = {
         ...envelope(revision),
         requestedScriptHashes: options.echoRequested
           ? options.echoRequested(req.scriptHashes)
           : req.scriptHashes,
         utxos: options.mutateSnapshotUtxos?.(baseUtxos) ?? baseUtxos,
-        history: [],
+        history,
+        activeScriptHashes,
+        historyCoverage: options.historyPartial
+          ? { status: 'partial', limitedScriptHashes: activeScriptHashes }
+          : { status: 'complete', limitedScriptHashes: [] },
       };
       return Promise.resolve({ ok: true as const, value, verifiedAtMs: 0 });
     },
@@ -174,6 +208,24 @@ describe('scan engine (§8.2)', () => {
     expect(snapshotRequests[1]).toHaveLength(19);
   });
 
+  it('keeps a used zero-balance address active when its history is bounded', async () => {
+    const { ports, snapshotRequests } = makePorts({
+      activeExt: [],
+      activeEvidenceExt: [18],
+      historyPartial: true,
+    });
+    const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 60, burnedChangeCount: 0 });
+    expect(result).toMatchObject({
+      ok: true,
+      active: true,
+      utxos: [],
+      historyCoverage: { status: 'partial' },
+    });
+    expect(result.historyCoverage.limitedScriptHashes).toContain(hashAt(0, 18));
+    expect(snapshotRequests).toHaveLength(2);
+    expect(snapshotRequests[1]).toHaveLength(19);
+  });
+
   it('keeps an ordinary 1,000-sat inbound payment available to eligibility checks', async () => {
     const { ports } = makePorts({
       activeExt: [0],
@@ -194,6 +246,33 @@ describe('scan engine (§8.2)', () => {
     });
   });
 
+  it('does not grant the first-funding dust exception from partial history', async () => {
+    const options: FakeOptions = {
+      activeExt: [0],
+      includeFundingHistory: true,
+      mutateSnapshotUtxos: (utxos) => utxos.map((utxo) => ({ ...utxo, valueSats: '100' })),
+      mutateClassify: (body) => ({
+        ...body,
+        classifications: body.classifications.map((record) => ({
+          ...record,
+          valueSats: '100',
+        })),
+      }),
+    };
+    const complete = makePorts(options);
+    const partial = makePorts({ ...options, historyPartial: true });
+    const completeResult = await scanUnit(UNIT, complete.ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 0,
+    });
+    const partialResult = await scanUnit(UNIT, partial.ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 0,
+    });
+    expect(completeResult.utxos[0]?.flags.dustQuarantined).toBe(false);
+    expect(partialResult.utxos[0]?.flags.dustQuarantined).toBe(true);
+  });
+
   it('raises the §8.2 Extended-scan prompt when the gap is unsatisfied at the cap', async () => {
     const { ports } = makePorts({ activeExt: [18, 38, 58] });
     const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 60, burnedChangeCount: 0 });
@@ -206,6 +285,26 @@ describe('scan engine (§8.2)', () => {
     const { ports } = makePorts({ activeExt: [18, 38], cancelAfterSnapshots: 1 });
     const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 60, burnedChangeCount: 0 });
     expect(result).toMatchObject({ ok: false, failure: 'cancelled', utxos: [] });
+  });
+
+  it('distinguishes a fail-closed response bound from a connection failure', async () => {
+    const limited = makePorts({
+      activeExt: [],
+      snapshotFailure: { reason: 'http', httpStatus: 422 },
+    });
+    await expect(scanUnit(UNIT, limited.ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 0,
+    })).resolves.toMatchObject({ ok: false, failure: 'data_limit' });
+
+    const unavailable = makePorts({
+      activeExt: [],
+      snapshotFailure: { reason: 'http', httpStatus: 503 },
+    });
+    await expect(scanUnit(UNIT, unavailable.ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 0,
+    })).resolves.toMatchObject({ ok: false, failure: 'gateway' });
   });
 
   it('rejects a signed response that does not echo this request\'s hashes', async () => {

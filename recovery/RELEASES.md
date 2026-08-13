@@ -65,6 +65,11 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.7.9` | 25 | `0d12d3a2b37ebe324e8fb3b9cdc0dd9e9f4c390950e1575cf187d187bead109e` | `8014d61936419bee901828b6465c8aab5338466588cc1780e42948c764b1ae2f` |
 | 1 | `v0.7.10` | 25 | `96f0e0c97bca489ccd15141800443223b3b8e9789f052f6cdb83eb39a4a12324` | `8014d61936419bee901828b6465c8aab5338466588cc1780e42948c764b1ae2f` |
 | 1 | `v0.7.11` | 22 | `35d85defa3e80a512474f8e2451fe3ed3debd900d66fdd55509b39dda2c52291` | `8014d61936419bee901828b6465c8aab5338466588cc1780e42948c764b1ae2f` |
+| 1 | `v0.7.12` | 22 | `21fa4ea87e7f9a8d57991b8ce4221ea373272f60eb45bd3e46fa69c014c899b6` | `8014d61936419bee901828b6465c8aab5338466588cc1780e42948c764b1ae2f` |
+| 1 | `v0.7.13` | 25 | `502ea701615a050e70a72f9872f02563e4f4472cfb5663feb068a521249dffa1` | `8014d61936419bee901828b6465c8aab5338466588cc1780e42948c764b1ae2f` |
+| 1 | `v0.7.15` | 25 | `b0c21407bd1ba7e64557d1c5fdfaf977064fe6701a7de1943c895c9ba6d28e4d` | `018732e7a8ad19e793c86dbdc13b205c33f8867c8a66ed9f454f89ff32d2cc14` |
+| 1 | `v0.7.16` | 25 | `dc2239e38387cad16fc23f292e081e4037977bffa6d215b2185a2cbcce9a0873` | `018732e7a8ad19e793c86dbdc13b205c33f8867c8a66ed9f454f89ff32d2cc14` |
+| 1 | `v0.8.0` | 25 | `8ef75e4849a453be766aa9b2acf17b5ab86544f46f9f4b47260b7999c7aea09e` | `7b267183ba5b1d14d2073b54f9f67d9cf17b2f3a1da64ed063a0702ed4d2d82d` |
 
 Every row so far is tool version **1**. Rows through `v0.2.13` share an artifact
 digest because the program itself did not change across them — only what the
@@ -211,6 +216,21 @@ artifact bytes remain identical while the reviewed source digest moves.
 200-input ceiling. The standalone recovery program does not import the provider
 registry, so its artifact bytes remain identical while the reviewed source
 digest moves.
+
+`v0.7.12` updates the public-mirror company identity, and `v0.7.13` adds
+display-only inscription references to the UTXO list contract. The standalone
+recovery program imports neither boundary, so its artifact remains identical
+while each tagged source digest identifies its complete reviewed revision.
+
+`v0.7.15` adds atomic multi-inscription planning and final-byte policy checks.
+`v0.7.16` hardens atomic inscription batch analysis and signing policy. The
+standalone recovery program imports the shared transaction plan and signing
+boundary, so both releases move the reviewed source digest and bundled artifact
+digest.
+
+`v0.8.0` adds native payment batching, deliberate inscription-postage
+management, and recovery-metadata contracts. The shared transaction and signing
+changes move both the reviewed source digest and the bundled artifact digest.
 
 Kits minted before the first row above carry an all-zero digest sentinel, which
 is deliberate: inventing a digest would claim a verifiable provider-independent

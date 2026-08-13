@@ -10,10 +10,11 @@
 import type {
   OutpointsClassifyRequest,
   OutpointsClassifyResponse,
+  HistoryCoverage,
   SnapshotHistoryEntry,
   UtxoClassification,
   WalletSnapshotRequest,
-  WalletSnapshotResponse,
+  WalletScanSnapshotResponse,
 } from '../domain/gateway/contract';
 import { CLASSIFY_MAX_OUTPOINTS, SNAPSHOT_MAX_SCRIPT_HASHES } from '../domain/gateway/contract';
 import type { FetchSignedResult } from '../gateway-client';
@@ -32,7 +33,7 @@ export interface IndexedScriptHash {
 
 export interface ScanUnitPorts {
   network: Network;
-  snapshot(req: WalletSnapshotRequest): Promise<FetchSignedResult<WalletSnapshotResponse>>;
+  snapshot(req: WalletSnapshotRequest): Promise<FetchSignedResult<WalletScanSnapshotResponse>>;
   classify(req: OutpointsClassifyRequest): Promise<FetchSignedResult<OutpointsClassifyResponse>>;
   /** Script hashes for `unit`'s addresses on `chain`, indexes [from, to). */
   hashesFor(unit: ScanUnit, chain: 0 | 1, from: number, to: number): IndexedScriptHash[];
@@ -49,6 +50,7 @@ export interface ScanUnitOptions {
 export type ScanUnitFailure =
   | 'cancelled'
   | 'conflicting_sources'
+  | 'data_limit'
   | 'gateway'; // any transport/verification failure — retried by the service
 
 export interface ScanUnitResult {
@@ -56,6 +58,10 @@ export interface ScanUnitResult {
   failure?: ScanUnitFailure;
   utxos: WalletUtxo[];
   history: SnapshotHistoryEntry[];
+  /** Positive activity evidence, including history too large to return. */
+  active: boolean;
+  /** Whether the returned transaction history is complete for this unit. */
+  historyCoverage: HistoryCoverage;
   /** The envelope revision all responses agreed on (null when no data). */
   revision: string | null;
   /** §8.2: gap not satisfied at the pass bound — offer Extended scan. */
@@ -74,9 +80,19 @@ function emptyResult(failure?: ScanUnitFailure): ScanUnitResult {
     ...(failure !== undefined ? { failure } : {}),
     utxos: [],
     history: [],
+    active: false,
+    historyCoverage: { status: 'complete', limitedScriptHashes: [] },
     revision: null,
     boundaryPrompt: false,
   };
+}
+
+function gatewayFailure(
+  response: Extract<FetchSignedResult<unknown>, { ok: false }>,
+): ScanUnitFailure {
+  return response.reason === 'http' && response.httpStatus === 422
+    ? 'data_limit'
+    : 'gateway';
 }
 
 /** Widen while activity sits within the gap limit of the fetched end. */
@@ -110,7 +126,7 @@ async function scanUnitOnce(
     0: { to: 0, highestActive: null },
     1: { to: 0, highestActive: null },
   };
-  type WireUtxo = WalletSnapshotResponse['utxos'][number];
+  type WireUtxo = WalletScanSnapshotResponse['utxos'][number];
   const hashIndex = new Map<
     string,
     { chain: 0 | 1; index: number; scriptPubKey: string }
@@ -118,6 +134,9 @@ async function scanUnitOnce(
   const utxosByOutpoint = new Map<string, { wire: WireUtxo; chain: 0 | 1; index: number }>();
   const historyByTxid = new Map<string, SnapshotHistoryEntry>();
   let revision: string | null = null;
+  const limitedScriptHashes = new Set<string>();
+  let historyPartial = false;
+  let active = false;
   let sourceIdentity: {
     instanceId: string;
     coreTip: { height: number; hash: string };
@@ -158,7 +177,7 @@ async function scanUnitOnce(
       scriptHashes: roundHashes.map((h) => h.scriptHash),
       ...(unit.lane === 'ordinals' ? { includeOrdinalFlow: true } : {}),
     });
-    if (!response.ok) return emptyResult('gateway');
+    if (!response.ok) return emptyResult(gatewayFailure(response));
     const body = response.value;
     // Bind the signed body to THIS request: a signed-but-misrouted response
     // must not read as an empty account and satisfy the gap scan early.
@@ -181,6 +200,17 @@ async function scanUnitOnce(
     ) return 'revision_skew';
 
     const roundHashIndex = new Map(roundHashes.map((entry) => [entry.scriptHash, entry]));
+    if (body.historyCoverage.status === 'partial') historyPartial = true;
+    for (const hash of body.historyCoverage.limitedScriptHashes) {
+      limitedScriptHashes.add(hash);
+    }
+    for (const scriptHash of body.activeScriptHashes) {
+      const where = roundHashIndex.get(scriptHash);
+      if (!where) return emptyResult('conflicting_sources');
+      active = true;
+      const w = windows[where.chain];
+      w.highestActive = Math.max(w.highestActive ?? -1, where.index);
+    }
     for (const utxo of body.utxos) {
       const where = roundHashIndex.get(utxo.scriptHash);
       // Ownership is established locally from the derived script, not from a
@@ -227,7 +257,7 @@ async function scanUnitOnce(
     if (ports.shouldCancel()) return emptyResult('cancelled');
     const chunk = outpoints.slice(i, i + CLASSIFY_MAX_OUTPOINTS);
     const response = await ports.classify({ network: ports.network, outpoints: chunk });
-    if (!response.ok) return emptyResult('gateway');
+    if (!response.ok) return emptyResult(gatewayFailure(response));
     if (revision !== null && response.value.classificationRevision !== revision) {
       return 'revision_skew';
     }
@@ -257,9 +287,14 @@ async function scanUnitOnce(
   }
 
   // Earliest confirmed funding = the account's first funding (dust heuristic).
-  const firstFundingTxid = [...historyByTxid.values()]
-    .filter((e) => e.height !== null)
-    .sort((a, b) => (a.height ?? 0) - (b.height ?? 0))[0]?.txid;
+  // A bounded history cannot prove which funding transaction was first. In
+  // that case retain the conservative dust quarantine instead of granting the
+  // first-funding exception from an incomplete activity window.
+  const firstFundingTxid = historyPartial
+    ? undefined
+    : [...historyByTxid.values()]
+        .filter((e) => e.height !== null)
+        .sort((a, b) => (a.height ?? 0) - (b.height ?? 0))[0]?.txid;
 
   const utxos: WalletUtxo[] = [];
   for (const [key, { wire, chain, index }] of utxosByOutpoint) {
@@ -325,6 +360,11 @@ async function scanUnitOnce(
     ok: true,
     utxos,
     history: [...historyByTxid.values()],
+    active,
+    historyCoverage: {
+      status: historyPartial ? 'partial' : 'complete',
+      limitedScriptHashes: [...limitedScriptHashes],
+    },
     revision,
     boundaryPrompt,
   };

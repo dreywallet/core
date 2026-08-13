@@ -317,7 +317,7 @@ export type ScanPhase =
       unitsTotal: number;
     }
   | { kind: 'awaiting_extend'; scanId: string; boundaryUnits: ScanUnit[] }
-  | { kind: 'completed'; scanId: string; finishedAt: number }
+  | { kind: 'completed'; scanId: string; finishedAt: number; historyPartial: boolean }
   | { kind: 'cancelled'; scanId: string; reason: 'user' | 'locked' }
   | { kind: 'failed'; scanId: string; reason: string }
   | { kind: 'interrupted'; checkpoint: ScanCheckpoint };
@@ -331,6 +331,7 @@ export interface ScanStatusView {
   currentUnit: { source: ScanUnit['source']; accountId: string | null; account: number; lane: AddressKind } | null;
   boundaryUnits: { source: ScanUnit['source']; accountId: string | null; account: number; lane: AddressKind }[];
   failureReason: string | null;
+  historyPartial: boolean;
 }
 
 export function scanStatusView(phase: ScanPhase, unitsTotal: number): ScanStatusView {
@@ -342,6 +343,7 @@ export function scanStatusView(phase: ScanPhase, unitsTotal: number): ScanStatus
     currentUnit: null,
     boundaryUnits: [],
     failureReason: null,
+    historyPartial: false,
   };
   switch (phase.kind) {
     case 'idle':
@@ -372,7 +374,12 @@ export function scanStatusView(phase: ScanPhase, unitsTotal: number): ScanStatus
         })),
       };
     case 'completed':
-      return { ...base, scanId: phase.scanId, unitsDone: unitsTotal };
+      return {
+        ...base,
+        scanId: phase.scanId,
+        unitsDone: unitsTotal,
+        historyPartial: phase.historyPartial,
+      };
     case 'cancelled':
       return { ...base, scanId: phase.scanId, failureReason: phase.reason };
     case 'failed':
@@ -383,6 +390,7 @@ export function scanStatusView(phase: ScanPhase, unitsTotal: number): ScanStatus
         scanId: phase.checkpoint.scanId,
         unitsDone: phase.checkpoint.done.length,
         unitsTotal: phase.checkpoint.done.length + phase.checkpoint.queue.length,
+        historyPartial: phase.checkpoint.historyPartial,
       };
   }
 }

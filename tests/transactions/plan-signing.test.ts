@@ -3,7 +3,13 @@ import { deriveAccountNode, deriveAddress } from '../../src/domain/keys/derivati
 import { mnemonicToSeed } from '../../src/domain/keys/mnemonic';
 import { scriptPubKeyHex } from '../../src/domain/keys/script-hash';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
-import { buildPsbtHex, signAndValidatePlan, validateSignedTransactionHex } from '../../src/domain/transactions/signing';
+import {
+  buildPsbtHex,
+  MAX_STANDARD_TRANSACTION_VSIZE,
+  assertStandardTransactionVsize,
+  signAndValidatePlan,
+  validateSignedTransactionHex,
+} from '../../src/domain/transactions/signing';
 import {
   assertLegacyCurrentPlanHash,
   assertPlanHash,
@@ -136,6 +142,112 @@ function makeTaprootPlan(): TransactionPlan {
   } });
 }
 
+function makeOrdinalBatchPlan(): TransactionPlan {
+  const ordinalAccount = deriveAccountNode(seed, 'ordinals', 'signet', 0);
+  const paymentAccount = deriveAccountNode(seed, 'payment', 'signet', 0);
+  const externalAccount = deriveAccountNode(seed, 'ordinals', 'signet', 1);
+  try {
+    const ordinalAddresses = [0, 1].map((index) =>
+      deriveAddress(ordinalAccount, 'ordinals', 'signet', 0, index));
+    const paymentInput = deriveAddress(paymentAccount, 'payment', 'signet', 0, 0);
+    const paymentChanges = [0, 1].map((index) =>
+      deriveAddress(paymentAccount, 'payment', 'signet', 1, index));
+    const recipient = deriveAddress(externalAccount, 'ordinals', 'signet', 0, 0);
+    const inscriptionIds = [`${'6'.repeat(64)}i0`, `${'7'.repeat(64)}i0`];
+    const sources = ordinalAddresses.map((address, index) => ({
+      txid: String(6 + index).repeat(64), vout: 0, valueSats: index === 0 ? 10_000n : 20_000n,
+      scriptPubKey: scriptPubKeyHex(address.publicKeyHex, 'ordinals', 'signet'),
+      sequence: 0xffffffff, sighash: 0 as const, ownership: 'wallet' as const,
+      derivation: { accountId, account: 0, lane: 'ordinals' as const, chain: 0 as const,
+        index, path: address.path, publicKeyHex: address.publicKeyHex },
+      classification: { primaryClass: 'inscribed' as const,
+        inscriptions: [{ inscriptionId: inscriptionIds[index]!,
+          satpoint: `${String(6 + index).repeat(64)}:0:0` }], satRanges: null,
+        unsupportedAssetDetected: false, confidence: 'authoritative' as const,
+        classifiedTip: { height: 250_000, hash: '2'.repeat(64) }, classificationRevision: 'rev-1' },
+    }));
+    const funding = {
+      txid: '8'.repeat(64), vout: 0, valueSats: 50_000n,
+      scriptPubKey: scriptPubKeyHex(paymentInput.publicKeyHex, 'payment', 'signet'),
+      sequence: 0xffffffff, sighash: 1 as const, ownership: 'wallet' as const,
+      derivation: { accountId, account: 0, lane: 'payment' as const, chain: 0 as const,
+        index: 0, path: paymentInput.path, publicKeyHex: paymentInput.publicKeyHex },
+      classification: { primaryClass: 'cardinal_clean' as const, inscriptions: [], satRanges: null,
+        unsupportedAssetDetected: false, confidence: 'authoritative' as const,
+        classifiedTip: { height: 250_000, hash: '2'.repeat(64) }, classificationRevision: 'rev-1' },
+    };
+    const postage = (valueSats: bigint) => ({ valueSats,
+      scriptPubKey: scriptPubKeyHex(recipient.publicKeyHex, 'ordinals', 'signet'),
+      address: recipient.address, role: 'postage' as const });
+    const paymentChange = (valueSats: bigint, index: number) => ({ valueSats,
+      scriptPubKey: scriptPubKeyHex(paymentChanges[index]!.publicKeyHex, 'payment', 'signet'),
+      address: paymentChanges[index]!.address, role: 'payment_change' as const,
+      derivation: { accountId, account: 0, lane: 'payment' as const, chain: 1 as const,
+        index, path: paymentChanges[index]!.path, publicKeyHex: paymentChanges[index]!.publicKeyHex } });
+    const selections = sources.map((source, index) => ({ inscriptionId: inscriptionIds[index]!,
+      outpoint: { txid: source.txid, vout: source.vout },
+      satpoint: source.classification.inscriptions[0]!.satpoint, classificationRevision: 'rev-1' }));
+    return rebuildOrdinalBatchPlan({
+      version: 4, planId: 'plan-ordinal-batch', createdAt: 1, expiresAt: 600_001,
+      network: 'signet', accountId, account: 0, kind: 'ordinal_batch_transfer',
+      policy: { intent: { kind: 'ordinal_batch_transfer', account: 0,
+        recipient: recipient.address, selections }, fee: customPlanFeePolicy('5') },
+      source: { backend: 'http://gateway', instanceId: 'fixture', classificationRevision: 'rev-1',
+        coreTip: { height: 250_000, hash: '2'.repeat(64) },
+        indexTip: { height: 250_000, hash: '2'.repeat(64) },
+        feeQuoteTimestamp: null, mempoolState: null },
+      inputs: [...sources, funding],
+      outputs: [postage(10_000n), postage(10_000n), paymentChange(10_000n, 0), paymentChange(49_000n, 1)],
+      protectedSatFlow: selections.map((selection, index) => ({ inputIndex: index,
+        inputOffset: 0n, outputIndex: index, outputOffset: 0n, inscriptionId: selection.inscriptionId })),
+      feeSats: 1_000n, vsize: 1n, feeRateSatPerKvB: 5_000n, urgency: 'custom', rbf: false,
+      parentTxid: null, replacesTxid: null, broadcast: true,
+    });
+  } finally {
+    ordinalAccount.wipePrivateData();
+    paymentAccount.wipePrivateData();
+    externalAccount.wipePrivateData();
+  }
+}
+
+type BatchPlanDraft = Omit<TransactionPlan,
+  'planHash' | 'transactionCommitmentHash' | 'inscriptionPreviews' |
+  'psbtHex' | 'psbtHash' | 'analysisHash'>;
+
+function rebuildOrdinalBatchPlan(draft: BatchPlanDraft): TransactionPlan {
+  const psbtHex = buildPsbtHex(draft.inputs, draft.outputs);
+  const vsize = estimateVsize(draft.inputs.map((input) => input.scriptPubKey),
+    draft.outputs.map((output) => output.scriptPubKey));
+  const feeSats = draft.inputs.reduce((sum, input) => sum + input.valueSats, 0n) -
+    draft.outputs.reduce((sum, output) => sum + output.valueSats, 0n);
+  const analyzed = analyzePsbtHex(psbtHex, { network: draft.network, account: draft.account,
+    kind: draft.kind, source: draft.source, inputs: draft.inputs, outputs: draft.outputs,
+    protectedSatFlow: draft.protectedSatFlow, feeSats, vsize,
+    feeRateSatPerKvB: draft.feeRateSatPerKvB, rbf: draft.rbf });
+  if (!analyzed.ok) throw new Error('batch fixture analysis failed');
+  const transaction = { ...draft, feeSats, vsize, psbtHex, psbtHash: hashHex(psbtHex),
+    analysisHash: analyzed.analysisHash };
+  const commitment = transactionCommitmentHash(transaction);
+  return finalizePlan({ ...transaction, inscriptionPreviews: {
+    transactionCommitmentHash: commitment, analysisHash: analyzed.analysisHash,
+    psbtHash: transaction.psbtHash, effectSetHash: analyzed.analysis.assetEffects.effectSetHash,
+    classificationRevision: draft.source.classificationRevision, verifiedAtMs: 1, items: [],
+  } });
+}
+
+function mutateOrdinalBatchPlan(
+  plan: TransactionPlan,
+  mutate: (draft: BatchPlanDraft) => void,
+): TransactionPlan {
+  const { planHash: _planHash, transactionCommitmentHash: _commitment,
+    inscriptionPreviews: _previews, psbtHex: _psbtHex, psbtHash: _psbtHash,
+    analysisHash: _analysisHash, ...body } = structuredClone(plan);
+  void _planHash; void _commitment; void _previews; void _psbtHex; void _psbtHash; void _analysisHash;
+  const draft = body as BatchPlanDraft;
+  mutate(draft);
+  return rebuildOrdinalBatchPlan(draft);
+}
+
 function bytes(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../gu) ?? [], (pair) => Number.parseInt(pair, 16));
 }
@@ -145,6 +257,13 @@ function hex(value: Uint8Array): string {
 }
 
 describe('M7 canonical plans and signing validation', () => {
+  it('fails closed before signing a plan above the standard transaction weight limit', () => {
+    expect(() => assertStandardTransactionVsize(MAX_STANDARD_TRANSACTION_VSIZE)).not.toThrow();
+    expect(() => assertStandardTransactionVsize(MAX_STANDARD_TRANSACTION_VSIZE + 1n))
+      .toThrow(/standard weight limit/u);
+    expect(() => assertStandardTransactionVsize(MAX_STANDARD_TRANSACTION_VSIZE + 1n, true))
+      .toThrow(/signed transaction/u);
+  });
   it('explains every password-confirmation reason without turning fee warnings into hard blocks', () => {
     const base = makePlan();
     const review = reviewFromPlan({
@@ -197,6 +316,64 @@ describe('M7 canonical plans and signing validation', () => {
     }, [], false);
     expect(unusuallyHighFee.requiresReauth).toBe(true);
     expect(unusuallyHighFee.reauthReasons).toEqual(['high_absolute_fee']);
+  });
+
+  it('builds a compact ordered review for an atomic ordinal batch', () => {
+    const base = makePlan();
+    const inscriptionIds = [`${'1'.repeat(64)}i0`, `${'2'.repeat(64)}i0`];
+    const source = {
+      ...base.inputs[0]!,
+      classification: {
+        ...base.inputs[0]!.classification,
+        primaryClass: 'inscribed' as const,
+        inscriptions: inscriptionIds.map((inscriptionId) => ({
+          inscriptionId,
+          satpoint: `${base.inputs[0]!.txid}:${base.inputs[0]!.vout}:0`,
+        })),
+      },
+    };
+    const postage = {
+      ...base.outputs[0]!,
+      role: 'postage' as const,
+      derivation: undefined,
+      address: 'tb1ptest',
+      valueSats: 10_000n,
+    };
+    const review = reviewFromPlan({
+      ...base,
+      kind: 'ordinal_batch_transfer',
+      policy: {
+        ...base.policy,
+        intent: {
+          kind: 'ordinal_batch_transfer',
+          account: 0,
+          recipient: postage.address,
+          selections: inscriptionIds.map((inscriptionId) => ({
+            inscriptionId,
+            outpoint: { txid: source.txid, vout: source.vout },
+            satpoint: `${source.txid}:${source.vout}:0`,
+            classificationRevision: 'rev-1',
+          })),
+        },
+      },
+      inputs: [source],
+      outputs: [postage],
+      protectedSatFlow: inscriptionIds.map((inscriptionId) => ({
+        inputIndex: 0,
+        inputOffset: 0n,
+        outputIndex: 0,
+        outputOffset: 0n,
+        inscriptionId,
+      })),
+    }, [], false);
+    expect(review.ordinalAction).toMatchObject({
+      action: 'batch_transfer',
+      inscriptionIds,
+      inscriptionCount: 2,
+      destination: { address: 'tb1ptest', ownership: 'external' },
+      aggregatePostageSats: '10000',
+      groups: [{ inscriptionIds, destinationOutputIndex: 0, travelsTogether: true }],
+    });
   });
 
   it('round-trips the versioned schema and canonical hash', () => {
@@ -283,6 +460,114 @@ describe('M7 canonical plans and signing validation', () => {
     const plan = makeTaprootPlan();
     const signed = signAndValidatePlan(plan, seed.slice(), (length) => new Uint8Array(length));
     expect(() => validateSignedTransactionHex(plan, signed.transactionHex)).not.toThrow();
+  });
+
+  it('signs and independently verifies a realistic multi-source ordinal batch', () => {
+    const plan = makeOrdinalBatchPlan();
+    const signed = signAndValidatePlan(plan, seed.slice(), (length) => new Uint8Array(length));
+    expect(() => validateSignedTransactionHex(plan, signed.transactionHex)).not.toThrow();
+  });
+
+  it('rejects unsafe ordinal batch input policy through the public signing path', () => {
+    const plan = makeOrdinalBatchPlan();
+    const mutations: Array<(draft: BatchPlanDraft) => void> = [
+      (draft) => { draft.inputs = [draft.inputs[2]!, draft.inputs[0]!, draft.inputs[1]!]; },
+      (draft) => { draft.inputs = [draft.inputs[1]!, draft.inputs[0]!, draft.inputs[2]!]; },
+      (draft) => {
+        if (draft.policy.intent.kind !== 'ordinal_batch_transfer') throw new Error('batch intent missing');
+        draft.policy.intent.selections = draft.policy.intent.selections.slice(0, 1);
+      },
+      (draft) => { draft.inputs[0]!.classification.classificationRevision = 'rev-stale'; },
+      (draft) => { draft.inputs[2]!.classification.primaryClass = 'unknown'; },
+    ];
+    for (const mutate of mutations) {
+      const unsafe = mutateOrdinalBatchPlan(plan, mutate);
+      expect(() => signAndValidatePlan(unsafe, seed.slice(), (length) => new Uint8Array(length)))
+        .toThrow(/analysis|ordinal batch/u);
+    }
+  });
+
+  it('rejects unsafe ordinal batch output policy while preserving valid self-send policy', () => {
+    const plan = makeOrdinalBatchPlan();
+    const separateCoLocated = mutateOrdinalBatchPlan(plan, (draft) => {
+      const first = draft.policy.intent.kind === 'ordinal_batch_transfer'
+        ? draft.policy.intent.selections[0]! : null;
+      if (!first || draft.policy.intent.kind !== 'ordinal_batch_transfer') throw new Error('batch intent missing');
+      const companion = { ...first, inscriptionId: `${'9'.repeat(64)}i0` };
+      draft.policy.intent.selections.splice(1, 0, companion);
+      draft.inputs[0]!.classification.inscriptions.push({ inscriptionId: companion.inscriptionId,
+        satpoint: companion.satpoint });
+      draft.protectedSatFlow.splice(1, 0, { ...draft.protectedSatFlow[0]!,
+        outputIndex: 1, inscriptionId: companion.inscriptionId });
+    });
+    expect(() => signAndValidatePlan(separateCoLocated, seed.slice(), (length) => new Uint8Array(length)))
+      .toThrow(/analysis|co-located/u);
+
+    const sharedDistinct = mutateOrdinalBatchPlan(plan, (draft) => {
+      draft.outputs[0]!.valueSats = 20_000n;
+      draft.outputs.splice(1, 1);
+      draft.protectedSatFlow[1]!.outputIndex = 0;
+      draft.protectedSatFlow[1]!.outputOffset = 10_000n;
+      for (let index = 2; index < draft.protectedSatFlow.length; index += 1) {
+        draft.protectedSatFlow[index]!.outputIndex -= 1;
+      }
+    });
+    expect(() => signAndValidatePlan(sharedDistinct, seed.slice(), (length) => new Uint8Array(length)))
+      .toThrow(/distinct ordinal batch satpoints|analysis/u);
+
+    const badChangeOwnership = mutateOrdinalBatchPlan(plan, (draft) => {
+      draft.outputs[2]!.derivation = { ...draft.outputs[2]!.derivation!, lane: 'ordinals' };
+    });
+    expect(() => signAndValidatePlan(badChangeOwnership, seed.slice(), (length) => new Uint8Array(length)))
+      .toThrow(/analysis|payment change/u);
+
+    const dustChange = mutateOrdinalBatchPlan(plan, (draft) => {
+      const donated = draft.outputs[2]!.valueSats - 1n;
+      draft.outputs[2]!.valueSats = 1n;
+      draft.outputs[3]!.valueSats += donated;
+    });
+    expect(() => signAndValidatePlan(dustChange, seed.slice(), (length) => new Uint8Array(length)))
+      .toThrow(/payment change|dust/u);
+
+    const annotatedOrdinalRecipient = mutateOrdinalBatchPlan(plan, (draft) => {
+      const destination = draft.inputs[0]!.derivation!;
+      const account = deriveAccountNode(seed, 'ordinals', 'signet', 0);
+      try {
+        const address = deriveAddress(account, 'ordinals', 'signet', destination.chain, destination.index);
+        for (const output of draft.outputs.filter((item) => item.role === 'postage')) {
+          output.address = address.address;
+          output.scriptPubKey = draft.inputs[0]!.scriptPubKey;
+          output.derivation = { ...destination };
+        }
+      } finally {
+        account.wipePrivateData();
+      }
+      if (draft.policy.intent.kind === 'ordinal_batch_transfer') {
+        draft.policy.intent.recipient = draft.outputs[0]!.address;
+      }
+    });
+    expect(() => signAndValidatePlan(annotatedOrdinalRecipient, seed.slice(),
+      (length) => new Uint8Array(length))).not.toThrow();
+
+    const annotatedPaymentRecipient = mutateOrdinalBatchPlan(plan, (draft) => {
+      const destination = draft.inputs[2]!.derivation!;
+      const account = deriveAccountNode(seed, 'payment', 'signet', 0);
+      try {
+        const address = deriveAddress(account, 'payment', 'signet', destination.chain, destination.index);
+        for (const output of draft.outputs.filter((item) => item.role === 'postage')) {
+          output.address = address.address;
+          output.scriptPubKey = draft.inputs[2]!.scriptPubKey;
+          output.derivation = { ...destination };
+        }
+      } finally {
+        account.wipePrivateData();
+      }
+      if (draft.policy.intent.kind === 'ordinal_batch_transfer') {
+        draft.policy.intent.recipient = draft.outputs[0]!.address;
+      }
+    });
+    expect(() => signAndValidatePlan(annotatedPaymentRecipient, seed.slice(),
+      (length) => new Uint8Array(length))).toThrow(/analysis|destination policy/u);
   });
 
   it('rejects output, witness-signature, and Taproot script-path serialized mutations', () => {

@@ -17,6 +17,7 @@ import {
   snapshotUtxoSchema,
   utxoClassificationSchema,
   walletSnapshotResponseSchema,
+  walletScanSnapshotResponseSchema,
 } from '../../src/domain/gateway/contract';
 import { MAX_CLOCK_SKEW_MS, verifySignedResponse } from '../../src/domain/gateway/verify';
 import { deriveAccountNode, deriveAddress } from '../../src/domain/keys/derivation';
@@ -79,6 +80,49 @@ describe('snapshot/classify signed fixtures', () => {
         expect(result.value.requestedScriptHashes.length).toBe(40);
       }
     }
+  });
+
+  it('enforces bounded scan subset, uniqueness, activity, and coverage invariants', () => {
+    const legacy = JSON.parse(new TextDecoder().decode(
+      readFixture('snapshot.clean.signed.json'),
+    )) as Record<string, unknown> & {
+      requestedScriptHashes: string[];
+      utxos: Array<{ scriptHash: string }>;
+      history: Array<{
+        fundedScriptHashes: string[];
+        spentScriptHashes: string[];
+      }>;
+    };
+    const activeScriptHashes = legacy.requestedScriptHashes.filter((hash) =>
+      legacy.utxos.some((utxo) => utxo.scriptHash === hash) ||
+      legacy.history.some((entry) =>
+        entry.fundedScriptHashes.includes(hash) || entry.spentScriptHashes.includes(hash)),
+    );
+    const valid = {
+      ...legacy,
+      activeScriptHashes,
+      historyCoverage: { status: 'complete', limitedScriptHashes: [] },
+    };
+    expect(walletScanSnapshotResponseSchema.safeParse(valid).success).toBe(true);
+    expect(walletScanSnapshotResponseSchema.safeParse({
+      ...valid,
+      activeScriptHashes: [],
+    }).success).toBe(false);
+    expect(walletScanSnapshotResponseSchema.safeParse({
+      ...valid,
+      activeScriptHashes: [...activeScriptHashes, ...activeScriptHashes.slice(0, 1)],
+    }).success).toBe(false);
+    expect(walletScanSnapshotResponseSchema.safeParse({
+      ...valid,
+      historyCoverage: {
+        status: 'complete',
+        limitedScriptHashes: activeScriptHashes.slice(0, 1),
+      },
+    }).success).toBe(false);
+    expect(walletScanSnapshotResponseSchema.safeParse({
+      ...valid,
+      activeScriptHashes: [...activeScriptHashes, 'f'.repeat(64)],
+    }).success).toBe(false);
   });
 
   it('verifies and parses the classify fixtures with the mirror schema', () => {

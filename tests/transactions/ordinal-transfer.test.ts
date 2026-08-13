@@ -5,6 +5,7 @@ import {
   groupOrdinalInscriptions,
   OrdinalInscriptionGroupError,
   partitionOrdinalSatFlow,
+  planOrdinalBatchSatFlow,
 } from '../../src/domain/transactions/ordinal-transfer';
 import { parseCanonicalSatpoint } from '../../src/domain/ordinals/satpoint';
 
@@ -206,6 +207,121 @@ describe('M9X ordinal transfer partitioning', () => {
           outputStart += partition.valueSats;
         }
         expect(outputStart).toBe(inputValueSats);
+      },
+    ), { numRuns: 250 });
+  });
+});
+
+describe('ordinal batch sat-flow planning', () => {
+  const source = (input: {
+    txid?: string;
+    vout?: number;
+    valueSats?: bigint;
+    offsets: readonly bigint[];
+    coLocated?: boolean;
+    idOffset?: number;
+  }) => {
+    const txid = input.txid ?? TXID;
+    const vout = input.vout ?? 0;
+    const entries = input.offsets.flatMap((offset, index) => {
+      const first = { inscriptionId: ids[index + (input.idOffset ?? 0)]!, satpoint: `${txid}:${vout}:${offset}` };
+      return input.coLocated && index === 0
+        ? [first, { inscriptionId: ids[5]!, satpoint: first.satpoint }]
+        : [first];
+    });
+    return {
+      txid,
+      vout,
+      valueSats: input.valueSats ?? 100_000n,
+      classificationRevision: 'rev-1',
+      inscriptions: entries,
+      selections: entries.map((entry) => ({
+        ...entry,
+        outpoint: { txid, vout },
+        classificationRevision: 'rev-1',
+      })),
+      recipientMinimumOutputSats: 330n,
+      preferredPostageSats: 10_000n,
+      sourceChangeMinimumSats: 600n,
+    };
+  };
+
+  it('returns cardinal prefixes and tails locally while keeping 10,000-sat postage', () => {
+    const plan = planOrdinalBatchSatFlow([source({ offsets: [50_000n] })]);
+    expect(plan.sources[0]?.outputs).toEqual([
+      { role: 'payment_change', valueSats: 50_000n },
+      { role: 'postage', valueSats: 10_000n, groupKey: ids[0] },
+      { role: 'payment_change', valueSats: 40_000n },
+    ]);
+    expect(plan.sources[0]?.groups[0]).toMatchObject({
+      inputOffset: 50_000n,
+      outputOffset: 0n,
+      valueSats: 10_000n,
+      sourceOutputIndex: 1,
+    });
+    expect(plan.sources[0]?.returnedBtcSats).toBe(90_000n);
+  });
+
+  it('keeps co-located IDs in one atomic output', () => {
+    const plan = planOrdinalBatchSatFlow([source({ offsets: [5_000n], coLocated: true })]);
+    expect(plan.inscriptionCount).toBe(2);
+    expect(plan.groupCount).toBe(1);
+    expect(plan.sources[0]?.groups[0]?.inscriptionIds).toEqual([ids[0], ids[5]]);
+  });
+
+  it('orders protected sources deterministically and places one top-up last', () => {
+    const noTopUp = source({ txid: 'bb'.repeat(32), vout: 1, offsets: [0n], idOffset: 1 });
+    const topUp = source({ txid: 'aa'.repeat(32), vout: 0, valueSats: 200n, offsets: [0n] });
+    topUp.preferredPostageSats = 330n;
+    const plan = planOrdinalBatchSatFlow([topUp, noTopUp]);
+    expect(plan.sources.map((item) => item.txid)).toEqual([noTopUp.txid, topUp.txid]);
+    expect(plan.requiredTopUpSourceIndex).toBe(1);
+    expect(plan.sources[1]?.requiredTopUpSats).toBe(130n);
+  });
+
+  it('fails closed for incomplete sources, stale bindings, and multiple top-ups', () => {
+    const incomplete = source({ offsets: [0n, 20_000n] });
+    incomplete.selections.pop();
+    expect(() => planOrdinalBatchSatFlow([incomplete]))
+      .toThrow(expect.objectContaining({ reason: 'incomplete_source' }));
+    const stale = source({ offsets: [0n] });
+    stale.selections[0]!.classificationRevision = 'rev-old';
+    expect(() => planOrdinalBatchSatFlow([stale]))
+      .toThrow(expect.objectContaining({ reason: 'stale_classification' }));
+    expect(() => planOrdinalBatchSatFlow([
+      source({ txid: 'aa'.repeat(32), valueSats: 200n, offsets: [0n] }),
+      source({ txid: 'bb'.repeat(32), valueSats: 200n, offsets: [0n], idOffset: 1 }),
+    ])).toThrowError(/more than one/u);
+  });
+
+  it('preserves every selected source prefix under randomized permutations', () => {
+    fc.assert(fc.property(
+      fc.array(fc.integer({ min: 330, max: 18_000 }), { minLength: 1, maxLength: 5 }),
+      fc.integer({ min: 0, max: 10_000 }),
+      (rawOffsets, permutationSeed) => {
+        let offset = 0n;
+        const offsets = rawOffsets.map((gap) => {
+          const current = offset;
+          offset += BigInt(gap);
+          return current;
+        });
+        const request = source({ offsets });
+        const shuffled = [...request.selections].sort((a, b) =>
+          (a.inscriptionId.charCodeAt(0) + permutationSeed) % 7 -
+          (b.inscriptionId.charCodeAt(0) + permutationSeed) % 7);
+        const plan = planOrdinalBatchSatFlow([{ ...request, selections: shuffled }]);
+        const planned = plan.sources[0]!;
+        expect(planned.outputs.reduce((sum, output) => sum + output.valueSats, 0n))
+          .toBe(planned.valueSats + planned.requiredTopUpSats);
+        const outputStarts: bigint[] = [];
+        let cursor = 0n;
+        for (const output of planned.outputs) {
+          outputStarts.push(cursor);
+          cursor += output.valueSats;
+        }
+        for (const group of planned.groups) {
+          expect(outputStarts[group.sourceOutputIndex]! + group.outputOffset).toBe(group.inputOffset);
+        }
       },
     ), { numRuns: 250 });
   });

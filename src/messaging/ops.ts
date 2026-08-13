@@ -53,6 +53,7 @@ import {
 } from '../domain/address-book';
 import { validateBip322Message } from '../domain/transactions/bip322';
 import { BIP321_LIMITS } from '../domain/payments/bip321';
+import { backupMetadataSchema } from '../domain/vault/backup-metadata';
 
 // Only ordinary trusted wallet surfaces may drive the portable RPC registry.
 // The in-page content bridge, approval window, and ledger page are excluded:
@@ -106,14 +107,25 @@ const vaultRevealMnemonicRequest = z
   .strict();
 
 const verifyWord = z
-  .object({ index: z.number().int().min(0).max(11), word: z.string().min(1) })
+  .object({ index: z.number().int().min(0).max(23), word: z.string().min(1) })
   .strict();
 const vaultVerifyBackupRequest = z
-  .object({ words: z.array(verifyWord).length(3), ...sessionExpectation })
+  .object({
+    words: z.array(verifyWord).length(3),
+    wordCount: z.union([z.literal(12), z.literal(15), z.literal(18), z.literal(21), z.literal(24)]).default(12),
+    ...sessionExpectation,
+  })
   .strict()
-  .refine((req) => new Set(req.words.map((w) => w.index)).size === req.words.length, {
+  .refine((req) => new Set(req.words.map((w) => w.index)).size === req.words.length &&
+    req.words.every((word) => word.index < req.wordCount), {
     message: 'verification word positions must be distinct',
   });
+export const vaultVerifyFullRecoveryRequest = z.object({
+  mnemonic: z.string().max(512).refine(validateMnemonic, { message: 'invalid BIP39 mnemonic' }),
+  passphrase: z.string().max(1024).optional(),
+  ...sessionExpectation,
+}).strict();
+export type VaultVerifyFullRecoveryRequest = z.infer<typeof vaultVerifyFullRecoveryRequest>;
 
 const addressReceiveRequest = z
   .object({ accountId: publicAccountId, kind: z.enum(['payment', 'ordinals']), ...sessionExpectation })
@@ -381,7 +393,11 @@ const connectedSiteRevokeResult = z.object({ revoked: z.boolean() }).strict();
 // The single sanctioned secret-bearing response (see module header).
 const revealMnemonicResult = z.object({ mnemonic: z.string().min(1) }).strict();
 const verifyBackupResult = z.object({ verified: z.boolean() }).strict();
-const backupStatusResult = z.object({ backupVerified: z.boolean() }).strict();
+const verifyFullRecoveryResult = z.object({ verified: z.boolean() }).strict();
+const backupStatusResult = z.object({
+  backupVerified: z.boolean(),
+  metadata: backupMetadataSchema.optional(),
+}).strict();
 const receiveAddressResult = z
   .object({
     accountId: publicAccountId,
@@ -455,6 +471,7 @@ const sessionSnapshotResult = z
     }).strict().nullable().default(null),
     activeRecoveredAddressCount: z.number().int().nonnegative().default(0),
     backupVerified: z.boolean(),
+    backupMetadata: backupMetadataSchema.optional(),
     capabilities: accountCapabilitiesResult,
   })
   .strict();
@@ -490,6 +507,7 @@ const scanStatusResult = z
     currentUnit: scanUnitView.nullable(),
     boundaryUnits: z.array(scanUnitView),
     failureReason: z.string().nullable(),
+    historyPartial: z.boolean(),
   })
   .strict();
 const scanCancelResult = z.object({ cancelled: z.boolean() }).strict();
@@ -509,7 +527,8 @@ export const walletActivityItemSchema = z
     ]),
     pendingAsset: z.literal('ordinal').nullable().optional(),
     actionKind: z.enum([
-      'ordinal_receive', 'ordinal_transfer', 'rescue', 'ordinal_sweep',
+      'ordinal_receive', 'ordinal_transfer', 'ordinal_batch_transfer', 'rescue', 'ordinal_sweep',
+      'ordinal_postage_manage',
     ]).nullable().optional(),
     addressContext: z.enum([
       'ordinals_received', 'ordinals_sent',
@@ -524,6 +543,7 @@ export const walletActivityItemSchema = z
     }).strict().nullable().optional(),
     bitcoinActionKind: z.literal('self_transfer').nullable().optional(),
     inscriptionId: inscriptionId.nullable().optional(),
+    inscriptionIds: z.array(inscriptionId).min(1).max(64).optional(),
     inscriptionNumber: z.number().int().nullable().optional(),
     inscriptionCount: z.number().int().positive().optional(),
     receivedInscriptionCount: z.number().int().positive().optional(),
@@ -535,7 +555,19 @@ export const walletActivityItemSchema = z
     timestamp: z.string().nullable(),
     height: z.number().int().nonnegative().nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((item, context) => {
+    if (item.inscriptionIds !== undefined &&
+        (new Set(item.inscriptionIds).size !== item.inscriptionIds.length ||
+          item.inscriptionCount !== item.inscriptionIds.length ||
+          (item.inscriptionId != null && item.inscriptionId !== item.inscriptionIds[0]))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['inscriptionIds'],
+        message: 'ordered inscription ids differ from activity summary',
+      });
+    }
+  });
 
 const activityPageCursor = z.object({
   version: z.literal(1),
@@ -552,6 +584,7 @@ const activityListResult = z.object({
   items: z.array(walletActivityItemSchema).max(ACTIVITY_PAGE_SIZE),
   nextCursor: activityPageCursor.nullable(),
   reset: z.boolean(),
+  historyComplete: z.boolean(),
 }).strict();
 
 const walletHomeResult = z
@@ -593,6 +626,7 @@ const walletHomeResult = z
       })
       .strict(),
     activity: z.array(walletActivityItemSchema),
+    historyComplete: z.boolean(),
     wrongLane: z.array(
       z
         .object({
@@ -913,6 +947,12 @@ export const OP_SCHEMAS = {
   'vault.verifyBackup': {
     request: vaultVerifyBackupRequest,
     response: verifyBackupResult,
+    allowedSenders: TRUSTED_SENDERS,
+    requiresUnlock: true,
+  },
+  'vault.verifyFullRecovery': {
+    request: vaultVerifyFullRecoveryRequest,
+    response: verifyFullRecoveryResult,
     allowedSenders: TRUSTED_SENDERS,
     requiresUnlock: true,
   },

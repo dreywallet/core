@@ -33,6 +33,7 @@ describe('adaptive account scan planning', () => {
       standardAccounts: [0],
       hiddenStandardAccounts: [],
       recoveredAddressCounts: [],
+      partialHistoryUnits: [],
     });
   });
 

@@ -39,6 +39,7 @@ import {
   INSCRIPTION_MEDIA_MAX_BYTES,
   outpointsClassifyResponseSchema,
   walletActivitySnapshotResponseSchema,
+  walletScanSnapshotResponseSchema,
   walletSnapshotResponseSchema,
   type BroadcastRequest,
   type BroadcastResult,
@@ -64,6 +65,7 @@ import {
   type StatusCapabilities,
   type WalletSnapshotRequest,
   type WalletSnapshotResponse,
+  type WalletScanSnapshotResponse,
 } from './domain/gateway/contract';
 import { base64ToBytes, bytesToBase64, bytesToHex } from './domain/vault/encoding';
 import { getCryptoProvider } from './domain/vault/crypto-provider';
@@ -137,6 +139,29 @@ interface RequestPolicy {
   maxRetries: number;
   retryTimeoutOnce: boolean;
   maxResponseBytes: number;
+}
+
+/**
+ * Additive-route rollout adapter. The legacy body was already verified before
+ * this function runs; coverage is derived only from that verified body and the
+ * exact local request. A legacy success is complete by definition because its
+ * strict response schema cannot represent truncated history.
+ */
+function scanSnapshotFromLegacy(
+  request: WalletSnapshotRequest,
+  response: WalletSnapshotResponse,
+): WalletScanSnapshotResponse {
+  const active = new Set<string>();
+  for (const utxo of response.utxos) active.add(utxo.scriptHash);
+  for (const entry of response.history) {
+    entry.fundedScriptHashes.forEach((hash) => active.add(hash));
+    entry.spentScriptHashes.forEach((hash) => active.add(hash));
+  }
+  return {
+    ...response,
+    activeScriptHashes: request.scriptHashes.filter((hash) => active.has(hash)),
+    historyCoverage: { status: 'complete', limitedScriptHashes: [] },
+  };
 }
 
 type BodyVerification<T> =
@@ -453,7 +478,17 @@ export class GatewayClient {
   async fetchSnapshot(
     req: WalletSnapshotRequest,
     signal?: AbortSignal,
-  ): Promise<FetchSignedResult<WalletSnapshotResponse>> {
+  ): Promise<FetchSignedResult<WalletScanSnapshotResponse>> {
+    const bounded = await this.postSigned(
+      '/v1/wallet/scan-snapshot',
+      req,
+      walletScanSnapshotResponseSchema,
+      NO_RETRY_30S,
+      signal,
+    );
+    if (bounded.ok || bounded.reason !== 'http' || bounded.httpStatus !== 404) {
+      return bounded;
+    }
     const activity = await this.postSigned(
       '/v1/wallet/activity-snapshot',
       req,
@@ -461,7 +496,14 @@ export class GatewayClient {
       NO_RETRY_30S,
       signal,
     );
-    if (activity.ok || activity.reason !== 'http' || activity.httpStatus !== 404) {
+    if (activity.ok) {
+      return {
+        ok: true,
+        value: scanSnapshotFromLegacy(req, activity.value),
+        verifiedAtMs: activity.verifiedAtMs,
+      };
+    }
+    if (activity.reason !== 'http' || activity.httpStatus !== 404) {
       return activity;
     }
     // Protocol-v2 gateways predating activity/ordinal-flow enrichment parse
@@ -473,13 +515,20 @@ export class GatewayClient {
       network: req.network,
       scriptHashes: req.scriptHashes,
     };
-    return this.postSigned(
+    const legacy = await this.postSigned(
       '/v1/wallet/snapshot',
       legacyRequest,
       walletSnapshotResponseSchema,
       TRANSIENT_READ_POLICY,
       signal,
     );
+    return legacy.ok
+      ? {
+          ok: true,
+          value: scanSnapshotFromLegacy(req, legacy.value),
+          verifiedAtMs: legacy.verifiedAtMs,
+        }
+      : legacy;
   }
 
   /** Batched per account, ≤200 outpoints per chunk (caller chunks). */

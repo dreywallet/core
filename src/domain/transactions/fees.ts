@@ -64,7 +64,10 @@ export function formatFeeRateSatPerVb(rateSatPerKvB: bigint): string {
 
 type SequencePolicyKind =
   | 'native_send'
+  | 'native_batch_send'
   | 'ordinal_transfer'
+  | 'ordinal_batch_transfer'
+  | 'ordinal_postage_manage'
   | 'consolidation'
   | 'rbf'
   | 'cpfp'
@@ -73,7 +76,8 @@ type SequencePolicyKind =
 
 /** Central sequence policy shared by all plan builders and regression tests. */
 export function sequenceForInput(kind: SequencePolicyKind, originalSequence?: number): number {
-  if (kind === 'ordinal_transfer' || kind === 'rescue' || kind === 'ordinal_sweep') {
+  if (kind === 'ordinal_transfer' || kind === 'ordinal_batch_transfer' || kind === 'ordinal_postage_manage' ||
+      kind === 'rescue' || kind === 'ordinal_sweep') {
     return FINAL_SEQUENCE;
   }
   if (kind === 'rbf' && originalSequence !== undefined) return originalSequence;

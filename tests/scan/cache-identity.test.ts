@@ -4,6 +4,8 @@ import {
   migrateLegacyStoredUtxos,
   storedUtxoSchema,
   storedUtxosSchema,
+  storedHistoryReadSchema,
+  storedHistoryRecordSchema,
 } from '../../src/scan/cache-schemas';
 
 const legacy = {
@@ -32,5 +34,22 @@ describe('stable account identity cache migration', () => {
     expect(migrateLegacyStoredUtxos([legacy], (row) => row.account === 0 ? accountId : null))
       .toEqual([{ ...legacy, accountId }]);
     expect(() => migrateLegacyStoredUtxos([legacy], () => null)).toThrow('cannot be resolved');
+  });
+});
+
+describe('versioned history cache migration', () => {
+  it('reads legacy arrays as complete and preserves explicit partial coverage', () => {
+    expect(storedHistoryReadSchema.parse([])).toEqual({
+      version: 2,
+      entries: [],
+      coverage: { status: 'complete', limitedScriptHashes: [] },
+    });
+    const partial = {
+      version: 2 as const,
+      entries: [],
+      coverage: { status: 'partial' as const, limitedScriptHashes: ['b'.repeat(64)] },
+    };
+    expect(storedHistoryRecordSchema.parse(partial)).toEqual(partial);
+    expect(storedHistoryReadSchema.parse(partial)).toEqual(partial);
   });
 });

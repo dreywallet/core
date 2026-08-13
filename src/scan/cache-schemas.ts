@@ -12,6 +12,7 @@ import {
   detectedAssetSchema,
   inscriptionRefSchema,
   inscriptionDisplayMetadataSchema,
+  historyCoverageSchema,
   isAuthoritativeCardinalClean,
   primaryClassSchema,
   satRangeSchema,
@@ -91,8 +92,23 @@ export function migrateLegacyStoredUtxos(
   });
 }
 
-/** History is cached in its wire shape (display-only data). */
+/** Legacy pre-v0.8.1 history record. */
 export const storedHistorySchema = z.array(snapshotHistoryEntrySchema);
+export const storedHistoryRecordSchema = z.object({
+  version: z.literal(2),
+  entries: storedHistorySchema,
+  coverage: historyCoverageSchema,
+}).strict();
+/** Reads migrate legacy arrays without rewriting them during an unrelated view. */
+export const storedHistoryReadSchema = z.union([
+  storedHistoryRecordSchema,
+  storedHistorySchema.transform((entries) => ({
+    version: 2 as const,
+    entries,
+    coverage: { status: 'complete' as const, limitedScriptHashes: [] },
+  })),
+]);
+export type StoredHistoryRecord = z.infer<typeof storedHistoryRecordSchema>;
 
 export const ACTIVITY_EVIDENCE_MAX_IDENTITIES = 4_096;
 export const activityEvidenceEntrySchema = z.object({
@@ -212,6 +228,8 @@ export const scanCheckpointSchema = z
      * clear the conflicting_sources gate.
      */
     hadConflict: z.boolean(),
+    /** At least one completed unit returned bounded rather than full history. */
+    historyPartial: z.boolean().default(false),
   })
   .strict();
 export type ScanCheckpoint = z.infer<typeof scanCheckpointSchema>;
@@ -338,6 +356,8 @@ export const accountsMetaSchema = z
     hasConflictingSources: z.boolean(),
     /** Successful units worth polling; absent in pre-adaptive cache records. */
     activeUnits: z.array(scanUnitSchema).default([]),
+    /** Units whose latest successful scan has incomplete display history. */
+    partialHistoryUnits: z.array(scanUnitSchema).default([]),
     /** Explicitly created or recovery-discovered standard accounts. */
     standardAccounts: standardAccountsSchema.default([0]),
     /** Stable registry survives empty scans; definitions are encrypted separately. */
@@ -555,7 +575,7 @@ export const storedTransactionSchema = z
   .object({
     planId: z.string().min(1),
     kind: z.enum([
-      'native_send', 'ordinal_transfer', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
+      'native_send', 'native_batch_send', 'ordinal_transfer', 'ordinal_batch_transfer', 'ordinal_postage_manage', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
     ]),
     txid: hexIdSchema,
     createdAt: z.number().int().nonnegative(),

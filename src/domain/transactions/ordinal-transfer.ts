@@ -28,6 +28,98 @@ export interface OrdinalPartition {
   target: boolean;
 }
 
+export interface BoundOrdinalBatchSelection {
+  inscriptionId: string;
+  outpoint: { txid: string; vout: number };
+  satpoint: string;
+  classificationRevision: string;
+}
+
+export interface OrdinalBatchSourceRequest {
+  txid: string;
+  vout: number;
+  valueSats: bigint;
+  classificationRevision: string;
+  inscriptions: readonly OrdinalInscriptionLocation[];
+  selections: readonly BoundOrdinalBatchSelection[];
+  recipientMinimumOutputSats: bigint;
+  preferredPostageSats: bigint;
+  sourceChangeMinimumSats: bigint;
+}
+
+export interface OrdinalBatchGroupPlan {
+  key: string;
+  inscriptionIds: string[];
+  inputOffset: bigint;
+  outputOffset: bigint;
+  valueSats: bigint;
+  sourceOutputIndex: number;
+}
+
+export type OrdinalBatchSourceOutputPlan =
+  | { role: 'postage'; valueSats: bigint; groupKey: string }
+  | { role: 'payment_change'; valueSats: bigint };
+
+export interface OrdinalBatchSourcePlan {
+  txid: string;
+  vout: number;
+  valueSats: bigint;
+  groups: OrdinalBatchGroupPlan[];
+  outputs: OrdinalBatchSourceOutputPlan[];
+  returnedBtcSats: bigint;
+  requiredTopUpSats: bigint;
+}
+
+export interface OrdinalBatchSatFlowPlan {
+  sources: OrdinalBatchSourcePlan[];
+  inscriptionCount: number;
+  groupCount: number;
+  requiredTopUpSourceIndex: number | null;
+}
+
+export type OrdinalBatchPlanFailure =
+  | 'invalid_selection'
+  | 'incomplete_source'
+  | 'stale_classification'
+  | 'unprovable_satpoint'
+  | 'unsafe_partition'
+  | 'multiple_top_ups';
+
+export class OrdinalBatchPlanError extends Error {
+  override readonly name = 'OrdinalBatchPlanError';
+
+  constructor(
+    readonly reason: OrdinalBatchPlanFailure,
+    message: string,
+    readonly outpoint?: { txid: string; vout: number },
+  ) {
+    super(message);
+  }
+}
+
+/** Canonical immutable order bound into a batch intent and activity record. */
+export function canonicalOrdinalBatchSelections(
+  selections: readonly BoundOrdinalBatchSelection[],
+): BoundOrdinalBatchSelection[] {
+  const ids = new Set<string>();
+  const bound = selections.map((selection) => {
+    const parsed = parseCanonicalSatpoint(selection.satpoint);
+    if (!/^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/u.test(selection.inscriptionId) ||
+        !parsed || parsed.txid !== selection.outpoint.txid || parsed.vout !== selection.outpoint.vout ||
+        selection.classificationRevision.length === 0 || ids.has(selection.inscriptionId)) {
+      throw new OrdinalBatchPlanError('invalid_selection', 'batch selection binding is invalid');
+    }
+    ids.add(selection.inscriptionId);
+    return { selection: { ...selection, outpoint: { ...selection.outpoint } }, offset: parsed.offset };
+  });
+  return bound.sort((a, b) =>
+    a.selection.outpoint.txid.localeCompare(b.selection.outpoint.txid) ||
+    a.selection.outpoint.vout - b.selection.outpoint.vout ||
+    (a.offset < b.offset ? -1 : a.offset > b.offset ? 1 :
+      a.selection.inscriptionId.localeCompare(b.selection.inscriptionId)))
+    .map(({ selection }) => selection);
+}
+
 export type OrdinalInscriptionGroupFailure =
   | 'unprovable_satpoint'
   | 'ambiguous_set'
@@ -190,4 +282,171 @@ export function partitionOrdinalSatFlow(
     start = end;
   }
   return result;
+}
+
+/**
+ * Plan all protected source segments for an atomic one-recipient transfer.
+ * Every source is self-balancing, except one optional top-up source which is
+ * placed last so appended clean inputs cannot shift a later protected sat.
+ */
+export function planOrdinalBatchSatFlow(
+  requests: readonly OrdinalBatchSourceRequest[],
+): OrdinalBatchSatFlowPlan {
+  const selections = canonicalOrdinalBatchSelections(requests.flatMap((request) => request.selections));
+  const selectionIds = new Set(selections.map((selection) => selection.inscriptionId));
+  if (
+    requests.length === 0 || selections.length === 0 || selections.length > 16 ||
+    selectionIds.size !== selections.length
+  ) {
+    throw new OrdinalBatchPlanError('invalid_selection', 'batch selection must contain 1 to 16 unique inscriptions');
+  }
+  const requestKeys = new Set<string>();
+  const planned = requests.map((request): OrdinalBatchSourcePlan => {
+    const source = { txid: request.txid, vout: request.vout };
+    const sourceKey = `${request.txid}:${request.vout}`;
+    if (
+      requestKeys.has(sourceKey) || request.valueSats <= 0n ||
+      request.recipientMinimumOutputSats <= 0n ||
+      request.preferredPostageSats < request.recipientMinimumOutputSats ||
+      request.sourceChangeMinimumSats <= 0n
+    ) {
+      throw new OrdinalBatchPlanError('invalid_selection', 'batch source is invalid', source);
+    }
+    requestKeys.add(sourceKey);
+    if (request.selections.some((selection) =>
+      selection.outpoint.txid !== request.txid || selection.outpoint.vout !== request.vout)) {
+      throw new OrdinalBatchPlanError('invalid_selection', 'selection is bound to another source', source);
+    }
+    if (request.selections.some((selection) =>
+      selection.classificationRevision !== request.classificationRevision)) {
+      throw new OrdinalBatchPlanError('stale_classification', 'selection classification changed', source);
+    }
+    const selectedById = new Map(request.selections.map((selection) => [selection.inscriptionId, selection]));
+    const factsById = new Map(request.inscriptions.map((inscription) => [inscription.inscriptionId, inscription]));
+    if (
+      selectedById.size !== request.selections.length ||
+      factsById.size !== request.inscriptions.length ||
+      selectedById.size !== factsById.size ||
+      [...factsById.keys()].some((id) => !selectedById.has(id))
+    ) {
+      throw new OrdinalBatchPlanError(
+        'incomplete_source',
+        'every inscription in a selected source must be included',
+        source,
+      );
+    }
+    const byOffset = new Map<string, Array<{ inscriptionId: string; offset: bigint }>>();
+    for (const [inscriptionId, fact] of factsById) {
+      const selected = selectedById.get(inscriptionId)!;
+      if (selected.satpoint !== fact.satpoint) {
+        throw new OrdinalBatchPlanError('unprovable_satpoint', 'selected inscription location changed', source);
+      }
+      const parsed = parseCanonicalSatpoint(fact.satpoint);
+      if (!parsed || parsed.txid !== request.txid || parsed.vout !== request.vout ||
+          parsed.offset >= request.valueSats) {
+        throw new OrdinalBatchPlanError('unprovable_satpoint', 'unprovable inscription satpoint', source);
+      }
+      const key = parsed.offset.toString();
+      const group = byOffset.get(key) ?? [];
+      group.push({ inscriptionId, offset: parsed.offset });
+      byOffset.set(key, group);
+    }
+    const groups = [...byOffset.values()]
+      .map((items) => ({
+        key: [...items].sort((a, b) => a.inscriptionId.localeCompare(b.inscriptionId))[0]!.inscriptionId,
+        inscriptionIds: items.map((item) => item.inscriptionId).sort((a, b) => a.localeCompare(b)),
+        inputOffset: items[0]!.offset,
+      }))
+      .sort((a, b) => a.inputOffset === b.inputOffset
+        ? a.key.localeCompare(b.key)
+        : a.inputOffset < b.inputOffset ? -1 : 1);
+    if (groups.length === 0) {
+      throw new OrdinalBatchPlanError('invalid_selection', 'batch source has no inscriptions', source);
+    }
+    const partitions: OrdinalBatchGroupPlan[] = [];
+    const outputs: OrdinalBatchSourceOutputPlan[] = [];
+    let cursor = 0n;
+    for (let index = 0; index < groups.length; index += 1) {
+      const group = groups[index]!;
+      const gap = group.inputOffset - cursor;
+      if (gap >= request.sourceChangeMinimumSats) {
+        outputs.push({ role: 'payment_change', valueSats: gap });
+        cursor = group.inputOffset;
+      }
+      const minimumEnd = cursor + request.recipientMinimumOutputSats;
+      const preferredEnd = cursor + request.preferredPostageSats;
+      const containingEnd = group.inputOffset + 1n;
+      let end = preferredEnd > containingEnd ? preferredEnd : containingEnd;
+      const next = groups[index + 1];
+      if (next && end > next.inputOffset) {
+        end = minimumEnd > containingEnd ? minimumEnd : containingEnd;
+      }
+      if (next && end > next.inputOffset) {
+        throw new OrdinalBatchPlanError(
+          'unsafe_partition',
+          'inscription groups cannot be partitioned into standard outputs',
+          source,
+        );
+      }
+      if (group.inputOffset < cursor || group.inputOffset >= end || end - cursor < request.recipientMinimumOutputSats) {
+        throw new OrdinalBatchPlanError('unsafe_partition', 'inscription group boundary is unsafe', source);
+      }
+      const sourceOutputIndex = outputs.length;
+      outputs.push({ role: 'postage', valueSats: end - cursor, groupKey: group.key });
+      partitions.push({
+        key: group.key,
+        inscriptionIds: group.inscriptionIds,
+        inputOffset: group.inputOffset,
+        outputOffset: group.inputOffset - cursor,
+        valueSats: end - cursor,
+        sourceOutputIndex,
+      });
+      cursor = end;
+    }
+    const tail = request.valueSats - cursor;
+    if (tail >= request.sourceChangeMinimumSats) {
+      outputs.push({ role: 'payment_change', valueSats: tail });
+      cursor += tail;
+    } else if (tail > 0n) {
+      const lastOutput = outputs.at(-1);
+      const lastPartition = partitions.at(-1);
+      if (lastOutput?.role !== 'postage' || !lastPartition) {
+        throw new OrdinalBatchPlanError('unsafe_partition', 'cardinal tail cannot be routed safely', source);
+      }
+      lastOutput.valueSats += tail;
+      lastPartition.valueSats += tail;
+      cursor += tail;
+    }
+    const outputTotal = outputs.reduce((sum, output) => sum + output.valueSats, 0n);
+    const returnedBtcSats = outputs
+      .filter((output) => output.role === 'payment_change')
+      .reduce((sum, output) => sum + output.valueSats, 0n);
+    return {
+      ...source,
+      valueSats: request.valueSats,
+      groups: partitions,
+      outputs,
+      returnedBtcSats,
+      requiredTopUpSats: outputTotal > request.valueSats
+        ? outputTotal - request.valueSats
+        : 0n,
+    };
+  });
+  const topUps = planned.filter((source) => source.requiredTopUpSats > 0n);
+  if (topUps.length > 1) {
+    throw new OrdinalBatchPlanError(
+      'multiple_top_ups',
+      'more than one inscription source requires clean postage top-up',
+    );
+  }
+  const byOutpoint = (a: OrdinalBatchSourcePlan, b: OrdinalBatchSourcePlan): number =>
+    a.txid.localeCompare(b.txid) || a.vout - b.vout;
+  const ordered = planned.filter((source) => source.requiredTopUpSats === 0n).sort(byOutpoint);
+  if (topUps[0]) ordered.push(topUps[0]);
+  return {
+    sources: ordered,
+    inscriptionCount: selections.length,
+    groupCount: ordered.reduce((sum, source) => sum + source.groups.length, 0),
+    requiredTopUpSourceIndex: topUps.length === 0 ? null : ordered.length - 1,
+  };
 }
