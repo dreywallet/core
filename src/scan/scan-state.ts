@@ -131,118 +131,25 @@ export function buildScanUnits(
   return units;
 }
 
-/**
- * Cheap live refresh: always cover both lanes for account 0 and the selected
- * account, then refresh only the exact lanes with known activity elsewhere.
- * A newly selected account is therefore probed completely without polling
- * every empty sibling lane on every timer tick.
- */
+/** Cheap live refresh: cover both lanes for the selected public account only. */
 export function buildRefreshUnits(
   network: Network,
-  activeUnits: readonly ScanUnit[],
-  selectedAccount: number,
-  standardAccounts: readonly number[] = [0],
-  accountIds: ReadonlyMap<number, string> = new Map(),
-  registeredAccounts: readonly RegisteredPublicAccount[] = [],
-  selectedAccountId?: string,
+  selectedAccount: RegisteredPublicAccount,
 ): ScanUnit[] {
-  if (!Number.isInteger(selectedAccount) || selectedAccount < 0 ||
-      selectedAccount > MAX_ACCOUNT_INDEX) {
+  if (!Number.isInteger(selectedAccount.account) || selectedAccount.account < 0 ||
+      selectedAccount.account > MAX_ACCOUNT_INDEX) {
     throw new RangeError('selected account is outside the supported range');
   }
-  const resolvedAccountIds = new Map(accountIds);
-  if (selectedAccountId !== undefined) {
-    const selected = registeredAccounts.find((account) => account.accountId === selectedAccountId);
-    if (!selected) throw new Error('selected public account is not registered');
-    if (selected.account !== selectedAccount) {
-      throw new Error('selected public account metadata differs from account index');
-    }
+  if (selectedAccount.network !== network ||
+      !selectedAccount.accountId.startsWith(`acct_${network}_`)) {
+    throw new Error('selected public account network mismatch');
   }
-  for (const registered of registeredAccounts) {
-    if (registered.network !== network ||
-        !registered.accountId.startsWith(`acct_${network}_`)) {
-      throw new Error('registered public account network mismatch');
-    }
-    if (registered.source !== 'standard') continue;
-    const prior = resolvedAccountIds.get(registered.account);
-    if (prior !== undefined && prior !== registered.accountId) {
-      throw new Error('multiple standard public identities claim one account index');
-    }
-    resolvedAccountIds.set(registered.account, registered.accountId);
-  }
-  for (const unit of activeUnits) {
-    if (unit.source !== 'standard' || unit.accountId === undefined) continue;
-    const prior = resolvedAccountIds.get(unit.account);
-    if (prior !== undefined && prior !== unit.accountId) {
-      throw new Error('multiple standard public identities claim one account index');
-    }
-    resolvedAccountIds.set(unit.account, unit.accountId);
-  }
-  const standard = new Map<string, ScanUnit>();
-  const activeStandardAccounts = new Set(
-    activeUnits
-      .filter((unit) => unit.source === 'standard')
-      .map((unit) => unit.account),
-  );
-  const completeAccounts = normalizeAccountIndexes([
-    0,
-    selectedAccount,
-    ...standardAccounts.filter((account) => !activeStandardAccounts.has(account)),
-  ]);
-  for (const account of completeAccounts) {
-    for (const lane of ['payment', 'ordinals'] as const) {
-      const accountId = resolvedAccountIds.get(account);
-      const unit: ScanUnit = {
-        source: 'standard',
-        account,
-        lane,
-        ...(accountId !== undefined ? { accountId } : {}),
-      };
-      standard.set(unitKey(unit), unit);
-    }
-  }
-  for (const unit of activeUnits) {
-    if (unit.source === 'standard' && unit.account <= MAX_ACCOUNT_INDEX) {
-      const accountId = resolvedAccountIds.get(unit.account);
-      const normalized = accountId === undefined ? unit : { ...unit, accountId };
-      standard.set(unitKey(normalized), normalized);
-    }
-  }
-  const units = [...standard.values()].sort((a, b) =>
-    a.account - b.account || (a.lane === b.lane ? 0 : a.lane === 'payment' ? -1 : 1));
-  const descriptorByKey = new Map<string, ScanUnit>();
-  for (const registered of registeredAccounts) {
-    if (registered.source !== 'descriptor') continue;
-    for (const lane of ['payment', 'ordinals'] as const) {
-      const unit: ScanUnit = {
-        source: 'descriptor',
-        accountId: registered.accountId,
-        account: registered.account,
-        lane,
-      };
-      descriptorByKey.set(unitKey(unit), unit);
-    }
-  }
-  for (const unit of activeUnits) {
-    if (unit.source !== 'descriptor') continue;
-    const key = unitKey(unit);
-    descriptorByKey.set(key, unit);
-  }
-  units.push(...[...descriptorByKey.values()].sort((left, right) => {
-    const leftId = left.accountId ?? '';
-    const rightId = right.accountId ?? '';
-    if (leftId !== rightId) return leftId < rightId ? -1 : 1;
-    return left.lane === right.lane ? 0 : left.lane === 'payment' ? -1 : 1;
+  return (['payment', 'ordinals'] as const).map((lane) => ({
+    source: selectedAccount.source,
+    accountId: selectedAccount.accountId,
+    account: selectedAccount.account,
+    lane,
   }));
-  const legacyKeys = new Set<string>();
-  for (const unit of activeUnits) {
-    if (unit.source !== 'xverse' || !unit.legacyEntryId) continue;
-    const key = unitKey(unit);
-    if (shadowedByStandardKey(network, key) !== null || legacyKeys.has(key)) continue;
-    legacyKeys.add(key);
-    units.push(unit);
-  }
-  return units;
 }
 
 /**

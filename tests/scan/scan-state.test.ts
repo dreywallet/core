@@ -171,10 +171,17 @@ describe('adaptive account scan planning', () => {
     expect(migratedEmpty.activePublicAccountId).toBe(accountA);
   });
 
-  it('refreshes only account 0 for a typical one-account wallet', () => {
-    expect(buildRefreshUnits('mainnet', [], 0).map(unitKey)).toEqual([
-      'a0:payment',
-      'a0:ordinals',
+  it('refreshes only the selected public account', () => {
+    const selected = {
+      accountId: `acct_mainnet_${'a'.repeat(64)}`,
+      network: 'mainnet' as const,
+      source: 'standard' as const,
+      account: 0,
+      name: 'Primary',
+    };
+    expect(buildRefreshUnits('mainnet', selected).map(unitKey)).toEqual([
+      `pub:${selected.accountId}:payment`,
+      `pub:${selected.accountId}:ordinals`,
     ]);
   });
 
@@ -196,23 +203,15 @@ describe('adaptive account scan planning', () => {
       registeredPublicAccounts: registered,
       activePublicAccountId: accountId,
     });
-    const refresh = buildRefreshUnits(
-      'signet',
-      persisted.activeUnits,
-      0,
-      persisted.standardAccounts,
-      new Map(),
-      persisted.registeredPublicAccounts,
-      persisted.activePublicAccountId ?? undefined,
-    );
+    const selected = persisted.registeredPublicAccounts.find(
+      (account) => account.accountId === persisted.activePublicAccountId,
+    )!;
+    const refresh = buildRefreshUnits('signet', selected);
     expect(refresh.filter((unit) => unit.source === 'descriptor').map(unitKey)).toEqual([
       `pub:${accountId}:payment`,
       `pub:${accountId}:ordinals`,
     ]);
-    expect(refresh.filter((unit) => unit.source === 'standard').map(unitKey)).toEqual([
-      `pub:${softwareAccountId}:payment`,
-      `pub:${softwareAccountId}:ordinals`,
-    ]);
+    expect(refresh.filter((unit) => unit.source === 'standard')).toEqual([]);
   });
 
   it('normalizes legacy standard activity and fully removes an active descriptor account', () => {
@@ -248,19 +247,8 @@ describe('adaptive account scan planning', () => {
         { accountId: softwareAccountId, account: 0, payment: 1, ordinals: 0 },
       ],
     });
-    const beforeRemoval = buildRefreshUnits(
-      'signet',
-      persisted.activeUnits,
-      0,
-      persisted.standardAccounts,
-      new Map(),
-      persisted.registeredPublicAccounts,
-      persisted.activePublicAccountId ?? undefined,
-    );
-    expect(beforeRemoval.filter((unit) => unit.source === 'standard').map(unitKey)).toEqual([
-      `pub:${softwareAccountId}:payment`,
-      `pub:${softwareAccountId}:ordinals`,
-    ]);
+    const beforeRemoval = buildRefreshUnits('signet', registered[1]!);
+    expect(beforeRemoval.filter((unit) => unit.source === 'standard')).toEqual([]);
     expect(beforeRemoval.filter((unit) => unit.source === 'descriptor').map(unitKey)).toEqual([
       `pub:${accountId}:payment`,
       `pub:${accountId}:ordinals`,
@@ -303,15 +291,10 @@ describe('adaptive account scan planning', () => {
     }
     const validMeta = accountsMetaSchema.parse(removed.meta);
     expect(scanCheckpointSchema.parse(removed.checkpoint)).toBeDefined();
-    const afterRestart = buildRefreshUnits(
-      'signet',
-      validMeta.activeUnits,
-      0,
-      validMeta.standardAccounts,
-      new Map(),
-      validMeta.registeredPublicAccounts,
-      validMeta.activePublicAccountId ?? undefined,
-    );
+    const selectedAfterRestart = validMeta.registeredPublicAccounts.find(
+      (account) => account.accountId === validMeta.activePublicAccountId,
+    )!;
+    const afterRestart = buildRefreshUnits('signet', selectedAfterRestart);
     expect(afterRestart.filter((unit) => unit.source === 'descriptor')).toEqual([]);
     expect(afterRestart.filter((unit) => unit.source === 'standard').map(unitKey)).toEqual([
       `pub:${softwareAccountId}:payment`,
@@ -350,27 +333,46 @@ describe('adaptive account scan planning', () => {
     expect(unitLaneFromKey('mainnet', 'unknown')).toBeNull();
   });
 
-  it('covers a selected or previously active twentieth account without polling empty middle accounts', () => {
-    const units = buildRefreshUnits('mainnet', [
-      { source: 'standard', account: 19, lane: 'payment' },
-    ], 19);
+  it('covers both lanes of a selected twentieth account without polling any sibling account', () => {
+    const selected = {
+      accountId: `acct_mainnet_${'c'.repeat(64)}`,
+      network: 'mainnet' as const,
+      source: 'standard' as const,
+      account: 19,
+      name: 'Account 20',
+    };
+    const units = buildRefreshUnits('mainnet', selected);
     expect(units.map(unitKey)).toEqual([
-      'a0:payment',
-      'a0:ordinals',
-      'a19:payment',
-      'a19:ordinals',
+      `pub:${selected.accountId}:payment`,
+      `pub:${selected.accountId}:ordinals`,
     ]);
   });
 
-  it('refreshes only the known-active lane for a non-selected account', () => {
-    const units = buildRefreshUnits('mainnet', [
-      { source: 'standard', account: 19, lane: 'payment' },
-    ], 0);
-    expect(units.map(unitKey)).toEqual([
-      'a0:payment',
-      'a0:ordinals',
-      'a19:payment',
-    ]);
+  it.each([1, 5, 20])('keeps routine work constant for a %i-account wallet', (count) => {
+    const registry = Array.from({ length: count }, (_, account) => ({
+      accountId: `acct_mainnet_${account.toString(16).padStart(64, '0')}`,
+      network: 'mainnet' as const,
+      source: 'standard' as const,
+      account,
+      name: `Account ${account + 1}`,
+    }));
+    const selected = registry.at(-1)!;
+    const units = buildRefreshUnits('mainnet', selected);
+    expect(units).toHaveLength(2);
+    expect(new Set(units.map((unit) => unit.accountId))).toEqual(new Set([selected.accountId]));
+  });
+
+  it('rejects selected-account metadata for another network or an invalid index', () => {
+    const selected = {
+      accountId: `acct_signet_${'d'.repeat(64)}`,
+      network: 'signet' as const,
+      source: 'descriptor' as const,
+      account: 0,
+      name: 'Watch account',
+    };
+    expect(() => buildRefreshUnits('mainnet', selected)).toThrow('network mismatch');
+    expect(() => buildRefreshUnits('signet', { ...selected, account: -1 }))
+      .toThrow('outside the supported range');
   });
 
   it('stops standard discovery after an unused account while preserving legacy checks', () => {
