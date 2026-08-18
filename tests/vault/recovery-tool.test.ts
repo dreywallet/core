@@ -412,6 +412,9 @@ describe('the committed golden vectors', () => {
       expect(record.text.compatibilityRequirements)
         .toEqual([...VAULT_RECOVERY_KIT_TEXT_V1.compatibilityRequirements]);
       expect(record.text.recoveryInstructions).toBe(VAULT_RECOVERY_KIT_TEXT_V1.recoveryInstructions);
+      expect(record.text.recoveryInstructions).toContain('losing every copy can prevent recovery');
+      expect(record.text.recoveryInstructions).toContain('Sharing it reveals every Vault address');
+      expect(record.text.recoveryInstructions).not.toContain('losing it costs privacy');
       expect(record.text.rotationInstructions).toBe(VAULT_RECOVERY_KIT_TEXT_V1.rotationInstructions);
     });
 

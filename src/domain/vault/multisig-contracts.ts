@@ -51,7 +51,7 @@ export const VAULT_RECOVERY_KIT_TEXT_V1 = Object.freeze({
     'Moving an inscription-bearing UTXO additionally requires a current, independently operated Ordinals data source.',
   ] as readonly string[]),
   recoveryInstructions:
-    'This kit cannot spend. It is the public description of a 2-of-3 Vault: keep it safe because it reveals every address, but losing it costs privacy, not coins. ' +
+    'This kit cannot spend. It is the public description of a 2-of-3 Vault. Keep a durable copy: losing every copy can prevent recovery even if two role backups survive. Sharing it reveals every Vault address. ' +
     'To recover, import either descriptor into a descriptor-capable wallet to see the funds, then supply any two of the three roles — Desktop A, Mobile B, or the offline Recovery Key C — to sign. ' +
     'The Recovery Key words are NOT the Spending Recovery Phrase and cannot spend on their own. ' +
     'Store this kit separately from the Recovery Key: together they are two of the three things an attacker would need.',

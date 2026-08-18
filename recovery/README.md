@@ -271,8 +271,9 @@ address, compatibility requirements, this package's two digests, and
 plain-language recovery and rotation instructions.
 
 **A kit cannot spend.** It contains no seed, no xprv, no passkey material, and
-none of role C's words. It is, however, extremely privacy-sensitive: it reveals
-every address the Vault will ever use. Losing it costs privacy, not coins.
+none of role C's words. Sharing it reveals every address the Vault will ever
+use. Keep a durable copy: losing every copy can prevent recovery even if two
+valid role backups survive. Store it separately from the Recovery Key.
 
 This tool does not believe a word of it. It throws away the stated policy ID and
 both descriptors, regenerates all three from the signer origins alone, and
