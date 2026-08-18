@@ -218,12 +218,39 @@ describe('scan engine (§8.2)', () => {
     expect(result).toMatchObject({
       ok: true,
       active: true,
+      confirmedActivity: false,
       utxos: [],
       historyCoverage: { status: 'partial' },
     });
     expect(result.historyCoverage.limitedScriptHashes).toContain(hashAt(0, 18));
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests[1]).toHaveLength(19);
+  });
+
+  it('distinguishes confirmed history from mempool-only activity', async () => {
+    const confirmed = await scanUnit(
+      UNIT,
+      makePorts({ activeExt: [0], includeFundingHistory: true }).ports,
+      { maxIndexPerChain: 60, burnedChangeCount: 0 },
+    );
+    const pending = await scanUnit(
+      UNIT,
+      makePorts({
+        activeExt: [0],
+        includeFundingHistory: true,
+        snapshotHeights: [null],
+        mutateClassify: (body) => ({
+          ...body,
+          classifications: body.classifications.map((record) => ({
+            ...record,
+            confirmations: 0,
+          })),
+        }),
+      }).ports,
+      { maxIndexPerChain: 60, burnedChangeCount: 0 },
+    );
+    expect(confirmed).toMatchObject({ active: true, confirmedActivity: true });
+    expect(pending).toMatchObject({ active: true, confirmedActivity: false });
   });
 
   it('keeps an ordinary 1,000-sat inbound payment available to eligibility checks', async () => {

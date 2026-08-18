@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRefreshUnits,
   buildScanUnits,
+  includeIntermediateDiscoveredAccounts,
   removeDescriptorAccountLifecycle,
   stopStandardDiscoveryAfter,
   unitKey,
@@ -379,6 +380,11 @@ describe('adaptive account scan planning', () => {
       'a0:payment', 'a0:ordinals', 'a1:payment', 'a1:ordinals',
     ]);
     expect(stopped.filter((unit) => unit.source === 'xverse')).toHaveLength(3);
+  });
+
+  it('registers intermediate accounts only through newly discovered activity', () => {
+    expect(includeIntermediateDiscoveredAccounts([0], [4])).toEqual([0, 1, 2, 3, 4]);
+    expect(includeIntermediateDiscoveredAccounts([0, 10], [])).toEqual([0, 10]);
   });
 
   it('probes beyond twenty accounts and continues from the highest known account', () => {

@@ -16,7 +16,7 @@
  * as a leak backstop.
  */
 import { z } from 'zod';
-import { MAX_ACCOUNT_INDEX } from '../domain/accounts/limits';
+import { ACCOUNT_GAP_LIMIT, MAX_ACCOUNT_INDEX } from '../domain/accounts/limits';
 import { gatewayStatusViewSchema } from '../domain/gateway/status-view';
 import {
   detectedAssetSchema,
@@ -214,6 +214,10 @@ const configSetRequest = z
 const activeAccountSetRequest = z
   .object({ accountId: publicAccountId, ...sessionExpectation })
   .strict();
+const accountAddRequest = z.object({
+  acknowledgeEmptyAccountRisk: z.boolean().default(false),
+  ...sessionExpectation,
+}).strict();
 const accountVisibilitySetRequest = z
   .object({
     accountId: publicAccountId,
@@ -364,6 +368,25 @@ const publicAccountRemoveResult = z.object({ removed: z.literal(true) }).strict(
 const accountVisibilityBlocker = z.enum([
   'active', 'last_visible', 'stale', 'holdings', 'pending',
 ]);
+const accountAddState = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('available'),
+    nextAccount: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+    trailingEmptyAccounts: z.number().int().min(0).max(ACCOUNT_GAP_LIMIT - 1),
+    limit: z.literal(ACCOUNT_GAP_LIMIT),
+    requiresAcknowledgement: z.boolean(),
+  }).strict(),
+  z.object({
+    kind: z.literal('empty_limit'),
+    firstEmptyAccount: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+    lastEmptyAccount: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
+    limit: z.literal(ACCOUNT_GAP_LIMIT),
+  }).strict(),
+  z.object({
+    kind: z.literal('index_exhausted'),
+    limit: z.literal(ACCOUNT_GAP_LIMIT),
+  }).strict(),
+]);
 const accountListResult = z.object({
   accounts: z.array(z.object({
     accountId: publicAccountId,
@@ -376,6 +399,7 @@ const accountListResult = z.object({
     canHide: z.boolean(),
     hideBlocker: accountVisibilityBlocker.nullable(),
   }).strict()).min(1),
+  accountAddState: accountAddState.nullable(),
 }).strict();
 const accountVisibilityResult = z.object({
   accountId: publicAccountId,
@@ -464,11 +488,7 @@ const sessionSnapshotResult = z
       name: z.string().min(1).max(80),
       signingSource: z.enum(['software', 'none']),
     }).strict()).default([]),
-    canAddAccount: z.boolean().default(false),
-    accountAddRequirement: z.object({
-      fundAccount: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
-      nextAccount: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
-    }).strict().nullable().default(null),
+    accountAddState: accountAddState.nullable().default(null),
     activeRecoveredAddressCount: z.number().int().nonnegative().default(0),
     backupVerified: z.boolean(),
     backupMetadata: backupMetadataSchema.optional(),
@@ -1056,7 +1076,7 @@ export const OP_SCHEMAS = {
     requiresUnlock: true,
   },
   'account.add': {
-    request: activeSessionRequest,
+    request: accountAddRequest,
     response: activeAccountResult,
     allowedSenders: TRUSTED_SENDERS,
     requiresUnlock: true,
@@ -1287,6 +1307,8 @@ export type AddressBookImportResult = z.infer<typeof addressBookImportResult>;
 export type AddressBookDismissRecentRequest = z.infer<typeof addressBookDismissRecentRequest>;
 export type ConfigSetRequest = z.infer<typeof configSetRequest>;
 export type ActiveAccountSetRequest = z.infer<typeof activeAccountSetRequest>;
+export type AccountAddRequest = z.infer<typeof accountAddRequest>;
+export type AccountAddState = z.infer<typeof accountAddState>;
 export type AccountVisibilitySetRequest = z.infer<typeof accountVisibilitySetRequest>;
 export type PublicAccountImportRequest = z.infer<typeof publicAccountImportRequest>;
 export type PublicAccountExportRequest = z.infer<typeof publicAccountExportRequest>;

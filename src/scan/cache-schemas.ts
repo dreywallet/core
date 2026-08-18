@@ -213,6 +213,10 @@ export const scanCheckpointSchema = z
     done: z.array(scanUnitSchema),
     /** Units that returned UTXOs or history during this scan. */
     activeUnits: z.array(scanUnitSchema).default([]),
+    /** Units that returned confirmed UTXOs or confirmed transaction history. */
+    confirmedUnits: z.array(scanUnitSchema).default([]),
+    /** Consecutive completed standard accounts without confirmed activity. */
+    emptyStandardAccountStreak: z.number().int().nonnegative().default(0),
     /** Explicitly created or previously discovered standard accounts. */
     standardAccounts: standardAccountsSchema.default([0]),
     /** Envelope revision every completed unit agreed on (null before first unit). */
@@ -375,6 +379,8 @@ export const accountsMetaSchema = z
       .default([]),
     /** Distinct current recovered external scripts per account and lane. */
     recoveredAddressCounts: recoveredAddressCountsSchema.default([]),
+    /** One-time acknowledgement of the cross-wallet empty-account tradeoff. */
+    emptyAccountGapAcknowledged: z.boolean().default(false),
   })
   .strict()
   .superRefine((meta, context) => {

@@ -229,10 +229,13 @@ describe('op registry', () => {
       },
     });
     expect(parsed.activeRecoveredAddressCount).toBe(0);
-    expect(parsed.accountAddRequirement).toBeNull();
+    expect(parsed.accountAddState).toBeNull();
     expect(OP_SCHEMAS['session.snapshot'].response.safeParse({
       ...parsed,
-      accountAddRequirement: { fundAccount: 2, nextAccount: 3 },
+      accountAddState: {
+        kind: 'available', nextAccount: 3, trailingEmptyAccounts: 2,
+        limit: 5, requiresAcknowledgement: true,
+      },
     }).success).toBe(true);
   });
 
@@ -456,6 +459,7 @@ describe('op registry', () => {
         active: true, hidden: false, hasHistory: true,
         canHide: false, hideBlocker: 'active',
       }],
+      accountAddState: null,
     }).success).toBe(true);
   });
 

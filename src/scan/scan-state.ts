@@ -288,6 +288,7 @@ export function removeDescriptorAccountLifecycle(
     queue: checkpoint.queue.filter(keepUnit),
     done: checkpoint.done.filter(keepUnit),
     activeUnits: checkpoint.activeUnits.filter(keepUnit),
+    confirmedUnits: checkpoint.confirmedUnits.filter(keepUnit),
     boundaryUnits: checkpoint.boundaryUnits.filter(keepUnit),
   };
   return { meta: nextMeta, checkpoint: nextCheckpoint, removedAccountId: accountId };
@@ -305,6 +306,30 @@ export function stopStandardDiscoveryAfter(
   const preserved = new Set(normalizeAccountIndexes(standardAccounts));
   return queue.filter((unit) =>
     unit.source !== 'standard' || unit.account <= account || preserved.has(unit.account));
+}
+
+/**
+ * Recovery registers every standard account through a newly discovered active
+ * index. Explicit pre-existing gaps are preserved rather than expanded.
+ */
+export function includeIntermediateDiscoveredAccounts(
+  knownAccounts: readonly number[],
+  discoveredActiveAccounts: readonly number[],
+): number[] {
+  const known = normalizeAccountIndexes(knownAccounts);
+  const result = new Set(known);
+  for (const active of normalizeAccountIndexes(discoveredActiveAccounts)) {
+    if (result.has(active)) continue;
+    let preceding = 0;
+    for (const account of result) {
+      if (account < active) preceding = Math.max(preceding, account);
+    }
+    if (active - preceding > ACCOUNT_DISCOVERY_BATCH_SIZE) {
+      throw new RangeError('discovered standard-account gap exceeds one recovery batch');
+    }
+    for (let account = preceding + 1; account <= active; account += 1) result.add(account);
+  }
+  return [...result].sort((left, right) => left - right);
 }
 
 export type ScanPhase =

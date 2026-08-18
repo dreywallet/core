@@ -60,6 +60,8 @@ export interface ScanUnitResult {
   history: SnapshotHistoryEntry[];
   /** Positive activity evidence, including history too large to return. */
   active: boolean;
+  /** Durable transaction evidence; mempool-only activity is deliberately false. */
+  confirmedActivity: boolean;
   /** Whether the returned transaction history is complete for this unit. */
   historyCoverage: HistoryCoverage;
   /** The envelope revision all responses agreed on (null when no data). */
@@ -81,6 +83,7 @@ function emptyResult(failure?: ScanUnitFailure): ScanUnitResult {
     utxos: [],
     history: [],
     active: false,
+    confirmedActivity: false,
     historyCoverage: { status: 'complete', limitedScriptHashes: [] },
     revision: null,
     boundaryPrompt: false,
@@ -361,6 +364,9 @@ async function scanUnitOnce(
     utxos,
     history: [...historyByTxid.values()],
     active,
+    confirmedActivity:
+      utxos.some((utxo) => utxo.height !== null) ||
+      [...historyByTxid.values()].some((entry) => entry.confirmationState === 'confirmed'),
     historyCoverage: {
       status: historyPartial ? 'partial' : 'complete',
       limitedScriptHashes: [...limitedScriptHashes],
