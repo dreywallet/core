@@ -80,7 +80,7 @@ export function reviewCommunityVaultAcquisitionProviderRequest(input: {
   if (expected.length === 0 || JSON.stringify(requested) !== JSON.stringify(expected)) {
     throw new Error('Community Vault acquisition signing inputs differ from this owner');
   }
-  if (requested.some((index) => validation.finalizedInputIndexes.includes(index))) {
+  if (requested.some((index) => validation.signedInputIndexes.includes(index))) {
     throw new Error('Community Vault acquisition owner inputs are already signed');
   }
   return {

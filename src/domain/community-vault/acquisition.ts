@@ -29,6 +29,7 @@ export interface CommunityVaultAcquisitionPsbtValidationV1 {
   version: 1;
   psbtHex: string;
   psbtHash: string;
+  signedInputIndexes: number[];
   finalizedInputIndexes: number[];
 }
 
@@ -564,6 +565,7 @@ export function validateCommunityVaultAcquisitionPsbt(
   }
   assertRawPsbtProfile(bytes, plan);
   const finalizedInputIndexes: number[] = [];
+  const signedInputIndexes: number[] = [];
   for (let index = 0; index < plan.inputs.length; index += 1) {
     const expected = plan.inputs[index]!;
     const actual = tx.getInput(index);
@@ -581,9 +583,13 @@ export function validateCommunityVaultAcquisitionPsbt(
     if (hasFinalScriptSig && hasFinalWitness) throw new Error('acquisition input has conflicting final scripts');
     if (hasFinalWitness) {
       verifyInputSignature(tx, plan, index);
+      signedInputIndexes.push(index);
       finalizedInputIndexes.push(index);
     } else {
       verifyPartialInputSignature(tx, plan, index);
+      if ((actual.partialSig?.length ?? 0) > 0 || (actual.tapKeySig?.length ?? 0) > 0) {
+        signedInputIndexes.push(index);
+      }
     }
   }
   for (let index = 0; index < plan.outputs.length; index += 1) {
@@ -599,6 +605,7 @@ export function validateCommunityVaultAcquisitionPsbt(
     version: 1,
     psbtHex,
     psbtHash: bytesToHex(getCryptoProvider().sha256(bytes)),
+    signedInputIndexes,
     finalizedInputIndexes,
   };
 }
@@ -625,10 +632,10 @@ export function combineCommunityVaultAcquisitionPsbts(input: {
   }
   const claimedInputs = new Set<number>();
   for (const candidate of candidates) {
-    if (candidate.validation.finalizedInputIndexes.length === 0) {
-      throw new Error('Community Vault acquisition signer added no finalized input');
+    if (candidate.validation.signedInputIndexes.length === 0) {
+      throw new Error('Community Vault acquisition signer added no signature');
     }
-    for (const index of candidate.validation.finalizedInputIndexes) {
+    for (const index of candidate.validation.signedInputIndexes) {
       if (claimedInputs.has(index)) {
         throw new Error('Community Vault acquisition input was signed by more than one package');
       }

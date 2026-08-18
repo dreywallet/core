@@ -343,7 +343,6 @@ describe('Community Vault listed acquisition profile', () => {
       const tx = Transaction.fromPSBT(hexToBytes(unsigned), { PSBTVersion: 0, lowR: true });
       if (!key.child.privateKey) throw new Error('fixture signing key unavailable');
       tx.signIdx(key.child.privateKey, index, [SigHash.ALL]);
-      tx.finalizeIdx(index);
       return bytesToHex(tx.toPSBT(0));
     });
     expect(() => finalizeCommunityVaultAcquisitionPsbt({
