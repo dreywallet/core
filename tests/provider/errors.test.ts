@@ -19,5 +19,11 @@ describe('provider JSON-RPC errors', () => {
     expect(providerError('ERR_PHISHING_BLOCKED')).toMatchObject({
       code: -32002, data: { dreyCode: 'ERR_PHISHING_BLOCKED' },
     });
+    expect(providerError('ERR_DATA_STALE')).toMatchObject({
+      code: -32009, data: { dreyCode: 'ERR_DATA_STALE' },
+    });
+    expect(providerError('ERR_BROADCAST_OUTCOME_UNKNOWN')).toMatchObject({
+      code: -32010, data: { dreyCode: 'ERR_BROADCAST_OUTCOME_UNKNOWN' },
+    });
   });
 });

@@ -15,6 +15,8 @@ export const ProviderErrorCode = z.enum([
   'ERR_UNSUPPORTED_MARKETPLACE',
   'ERR_UNSUPPORTED_TEMPLATE',
   'ERR_MARKETPLACE_STATE_CHANGED',
+  'ERR_DATA_STALE',
+  'ERR_BROADCAST_OUTCOME_UNKNOWN',
 ]);
 export type ProviderErrorCode = z.infer<typeof ProviderErrorCode>;
 
@@ -32,6 +34,8 @@ const ERROR_DETAILS: Record<ProviderErrorCode, { code: number; message: string }
   ERR_UNSUPPORTED_MARKETPLACE: { code: -32006, message: 'Marketplace is not supported for this request' },
   ERR_UNSUPPORTED_TEMPLATE: { code: -32007, message: 'Marketplace transaction template is not supported' },
   ERR_MARKETPLACE_STATE_CHANGED: { code: -32008, message: 'Marketplace request state changed' },
+  ERR_DATA_STALE: { code: -32009, message: 'Wallet data is not current' },
+  ERR_BROADCAST_OUTCOME_UNKNOWN: { code: -32010, message: 'Broadcast outcome is unknown' },
 };
 
 export const providerJsonRpcErrorSchema = z

@@ -58,6 +58,7 @@ export const ErrorCode = z.enum([
   'ERR_NO_SWEEPABLE_EXCESS',
   'ERR_NOT_ACCELERATABLE',
   'ERR_BROADCAST_REJECTED',
+  'ERR_BROADCAST_OUTCOME_UNKNOWN',
   // The address decodes but is not a script this wallet can pay to. Distinct
   // from ERR_INVALID_PAYLOAD so the UI can name the address as the problem.
   'ERR_UNSUPPORTED_ADDRESS',
