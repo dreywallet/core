@@ -2,7 +2,7 @@
   "name": "@drey/core",
   "description": "Drey — platform-free Bitcoin L1 and Ordinals wallet core (domain, messaging, scan, gateway client)",
   "private": true,
-  "version": "0.11.0",
+  "version": "0.12.0",
   "license": "AGPL-3.0-only",
   "author": "Squirrel Systems LLC",
   "repository": {
@@ -31,6 +31,7 @@
     "./vectors/passkey-envelope-v1.json": "./vectors/passkey-envelope-v1.json",
     "./vectors/native-send-v1.json": "./vectors/native-send-v1.json",
     "./vectors/public-account-v1.json": "./vectors/public-account-v1.json",
+    "./vectors/community-vault-v1.json": "./vectors/community-vault-v1.json",
     "./fixtures/*": "./tests/fixtures/*",
     "./package.json": "./package.json"
   },
@@ -41,7 +42,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "fixtures:sync": "node scripts/sync-gateway-fixtures.mjs",
-    "vectors:generate": "node scripts/generate-conformance-vectors.mjs && vite build --config scripts/vault-vector-vite.config.ts && node node_modules/.cache/drey-vault-vector-generator/generate.mjs && pnpm recovery:vectors",
+    "vectors:generate": "node scripts/generate-conformance-vectors.mjs && vite build --config scripts/vault-vector-vite.config.ts && node node_modules/.cache/drey-vault-vector-generator/generate.mjs && pnpm community:vectors && pnpm recovery:vectors",
+    "community:vectors": "vite build --config scripts/community-vault-vector-vite.config.ts && node node_modules/.cache/drey-community-vault-vector-generator/generate.mjs",
     "recovery:vectors": "vite build --config recovery/vectors.config.ts && node node_modules/.cache/drey-recovery-vector-generator/generate.mjs",
     "recovery:build": "vite build --config recovery/vite.config.ts",
     "recovery:digest": "node recovery/digest.mjs",
