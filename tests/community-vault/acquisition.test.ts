@@ -7,9 +7,11 @@ import {
   assertCommunityVaultAcquisitionPlan,
   assertCommunityVaultAcquisitionPreflight,
   communityVaultAcquisitionUnitAmounts,
+  combineCommunityVaultAcquisitionPsbts,
   constructCommunityVaultAcquisitionPsbt,
   createCommunityVaultFrontedAcquisitionPlan,
   createCommunityVaultListedAcquisitionPlan,
+  finalizeCommunityVaultAcquisitionPsbt,
   validateCommunityVaultAcquisitionPsbt,
   verifyFinalizedCommunityVaultAcquisition,
 } from '../../src/domain/community-vault/acquisition';
@@ -332,6 +334,38 @@ describe('Community Vault listed acquisition profile', () => {
     const signatureHex = bytesToHex(signature);
     const mutated = signed.replace(signatureHex, `${signatureHex.startsWith('00') ? '01' : '00'}${signatureHex.slice(2)}`);
     expect(() => verifyFinalizedCommunityVaultAcquisition({ policy, plan, transactionHex: mutated })).toThrow();
+  });
+
+  it('combines independent owner approvals and finalizes without broadcasting', () => {
+    const { policy, plan, keys } = listedFixture();
+    const unsigned = constructCommunityVaultAcquisitionPsbt(policy, plan);
+    const packages = keys.map((key, index) => {
+      const tx = Transaction.fromPSBT(hexToBytes(unsigned), { PSBTVersion: 0, lowR: true });
+      if (!key.child.privateKey) throw new Error('fixture signing key unavailable');
+      tx.signIdx(key.child.privateKey, index, [SigHash.ALL]);
+      tx.finalizeIdx(index);
+      return bytesToHex(tx.toPSBT(0));
+    });
+    expect(() => finalizeCommunityVaultAcquisitionPsbt({
+      policy,
+      plan,
+      psbtHex: combineCommunityVaultAcquisitionPsbts({
+        policy,
+        plan,
+        psbtHexes: packages.slice(0, -1),
+      }).psbtHex,
+    })).toThrow(/not signed/u);
+    const forward = combineCommunityVaultAcquisitionPsbts({ policy, plan, psbtHexes: packages });
+    const reverse = combineCommunityVaultAcquisitionPsbts({ policy, plan, psbtHexes: [...packages].reverse() });
+    expect(reverse).toEqual(forward);
+    const final = finalizeCommunityVaultAcquisitionPsbt({ policy, plan, psbtHex: forward.psbtHex });
+    expect(final.transactionHex).toMatch(/^[0-9a-f]+$/u);
+    expect(final.feeSats).toBe(plan.settlementFeeSats);
+    expect(() => combineCommunityVaultAcquisitionPsbts({
+      policy,
+      plan,
+      psbtHexes: [packages[0]!, packages[0]!],
+    })).toThrow(/duplicate/u);
   });
 });
 

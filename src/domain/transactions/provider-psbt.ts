@@ -21,6 +21,7 @@ import {
 import { templateForResolution } from '../marketplaces/resolver';
 import { verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
 import { assertProviderPsbtItemCounts } from './provider-psbt-limits';
+import type { CommunityVaultAcquisitionProviderReviewV1 } from '../community-vault/acquisition-provider';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -47,7 +48,8 @@ export interface ProviderPsbtPlanV3 {
   /** Stable public-account identity; numeric account is BIP32 metadata only. */
   accountId: string;
   account: number;
-  kind: 'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt';
+  kind: 'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt' |
+    'community_vault_acquisition';
   provider: ProviderAuthorityBinding;
   broadcast: boolean;
   requiresAdvanced: boolean;
@@ -80,6 +82,7 @@ export interface ProviderPsbtPlanV3 {
     commitment: MarketplaceCommitmentAnalysis;
     allowTaprootScriptPath: boolean;
   };
+  communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
 }
 
 /** Compatibility name for call sites; only version 4 is constructible. */
@@ -319,13 +322,21 @@ export function createProviderPsbtPlan(input: {
   walletOutputs?: Array<{ scriptPubKey: string; output: PlanOutput }>;
   protectedSatFlow?: TransactionPlan['protectedSatFlow'];
   requiresAdvanced?: boolean;
+  expiresAt?: number;
   selectedInputIndexes?: number[];
+  communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   marketplace?: {
     context: MarketplaceContext;
     resolution: MarketplaceResolution;
     selectedInputIndexes?: number[];
   };
 }): ProviderPsbtPlanV3 {
+  if (input.marketplace && input.communityVaultAcquisition) {
+    throw new Error('marketplace and Community Vault acquisition plans are mutually exclusive');
+  }
+  if (input.communityVaultAcquisition && (input.network !== 'mainnet' || input.broadcast)) {
+    throw new Error('Community Vault acquisition signing is mainnet-only and never broadcasts');
+  }
   if (!new RegExp(`^acct_${input.network}_[0-9a-f]{64}$`, 'u').test(input.accountId)) {
     throw new Error('provider public account identity differs from network');
   }
@@ -361,6 +372,11 @@ export function createProviderPsbtPlan(input: {
     : input.selectedInputIndexes === undefined
       ? undefined
       : [...new Set(input.selectedInputIndexes)].sort((a, b) => a - b);
+  if (input.communityVaultAcquisition &&
+      JSON.stringify(requestedIndexes ?? []) !==
+        JSON.stringify(input.communityVaultAcquisition.selectedInputIndexes)) {
+    throw new Error('Community Vault acquisition signer indexes changed');
+  }
   if (input.marketplace && (!marketplaceTemplate || !marketplaceRule || input.marketplace.resolution.status !== 'recognized')) {
     throw new Error('marketplace template resolution changed');
   }
@@ -568,7 +584,9 @@ export function createProviderPsbtPlan(input: {
   const analysisResult = analyzePsbtHex(psbtHex, {
     network: input.network,
     account: input.account,
-    kind: input.marketplace ? 'marketplace_psbt' : input.kind ?? 'provider_psbt',
+    kind: input.marketplace ? 'marketplace_psbt' :
+      input.communityVaultAcquisition ? 'community_vault_acquisition' :
+        input.kind ?? 'provider_psbt',
     source: input.source,
     inputs: planInputs,
     outputs,
@@ -610,16 +628,19 @@ export function createProviderPsbtPlan(input: {
     version: 4 as const,
     planId: input.planId,
     createdAt: input.now,
-    expiresAt: input.now + 5 * 60_000,
+    expiresAt: Math.min(input.now + 5 * 60_000, input.expiresAt ?? Number.MAX_SAFE_INTEGER),
     network: input.network,
     vaultId: input.vaultId,
     sessionId: input.sessionId,
     accountId: input.accountId,
     account: input.account,
-    kind: input.marketplace ? 'marketplace_psbt' as const : input.kind ?? 'provider_psbt',
+    kind: input.marketplace ? 'marketplace_psbt' as const :
+      input.communityVaultAcquisition ? 'community_vault_acquisition' as const :
+        input.kind ?? 'provider_psbt',
     provider: input.binding,
     broadcast: input.broadcast,
-    requiresAdvanced: input.marketplace || genericCommitment ? false : input.requiresAdvanced !== false,
+    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition
+      ? false : input.requiresAdvanced !== false,
     selectedInputIndexes,
     ...(genericCommitment ? { genericListing: {
       selectedInputIndexes: [...selectedInputIndexes],
@@ -644,6 +665,9 @@ export function createProviderPsbtPlan(input: {
       commitment: marketplaceCommitment,
       allowTaprootScriptPath: marketplaceRule!.allowTaprootScriptPath,
     } } : {}),
+    ...(input.communityVaultAcquisition ? {
+      communityVaultAcquisition: input.communityVaultAcquisition,
+    } : {}),
   };
   const transactionCommitmentHash = providerTransactionCommitmentHash(withoutHash);
   const inscriptionPreviews: StoredInscriptionPreviewSet | null =
@@ -843,7 +867,8 @@ export function assertProviderPsbtPlan(plan: ProviderPsbtPlanV3): void {
         (input.derivation?.accountId !== plan.accountId || input.derivation.account !== plan.account)) ||
       plan.outputs.some((output) => output.derivation !== undefined &&
         (output.derivation.accountId !== plan.accountId || output.derivation.account !== plan.account)) ||
-      !['provider_psbt', 'provider_transfer', 'provider_ordinal_transfer', 'marketplace_psbt'].includes(plan.kind) ||
+      !['provider_psbt', 'provider_transfer', 'provider_ordinal_transfer', 'marketplace_psbt',
+        'community_vault_acquisition'].includes(plan.kind) ||
       !Array.isArray(plan.inputs) || !Array.isArray(plan.outputs) ||
       (plan.selectedInputIndexes !== undefined &&
         (!Array.isArray(plan.selectedInputIndexes) || plan.selectedInputIndexes.length === 0)) ||

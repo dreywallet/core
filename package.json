@@ -2,7 +2,7 @@
   "name": "@drey/core",
   "description": "Drey — platform-free Bitcoin L1 and Ordinals wallet core (domain, messaging, scan, gateway client)",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.13.0",
   "license": "AGPL-3.0-only",
   "author": "Squirrel Systems LLC",
   "repository": {

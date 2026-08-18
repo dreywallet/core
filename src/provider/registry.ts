@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
 import { PROVIDER_MAX_PSBT_INPUTS } from '../domain/transactions/provider-psbt-limits';
+import { communityVaultAcquisitionProviderContextSchema } from '../domain/community-vault/acquisition-provider';
 
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
@@ -259,8 +260,24 @@ const signPsbtParamsSchema = z
     signInputs: signInputsSchema.optional(),
     broadcast: z.boolean().optional(),
     marketplaceContext: marketplaceContextSchema.optional(),
+    communityVaultAcquisitionContext: communityVaultAcquisitionProviderContextSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.marketplaceContext !== undefined &&
+        value.communityVaultAcquisitionContext !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'marketplace and Community Vault acquisition contexts are mutually exclusive',
+      });
+    }
+    if (value.communityVaultAcquisitionContext !== undefined && value.broadcast === true) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Community Vault acquisition approvals never broadcast',
+      });
+    }
+  });
 
 const signPsbtResultSchema = z
   .object({

@@ -22,7 +22,8 @@ import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 import { isAuthoritativeCardinalClean } from '../gateway/contract';
 
 export type AnalysisTransactionKind = TransactionKind |
-  'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt';
+  'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt' |
+  'community_vault_acquisition';
 
 export type SighashOutputMode = 'default' | 'all' | 'none' | 'single';
 
@@ -411,7 +412,8 @@ function analyzeParsed(
     }
     const kind = scriptKind(expected.scriptPubKey);
     const providerKind = context.kind === 'provider_psbt' || context.kind === 'provider_transfer' ||
-      context.kind === 'provider_ordinal_transfer' || context.kind === 'marketplace_psbt';
+      context.kind === 'provider_ordinal_transfer' || context.kind === 'marketplace_psbt' ||
+      context.kind === 'community_vault_acquisition';
     const declaredExternal = providerKind && expected.ownership === 'external' && expected.derivation === null;
     const invalidExternalDeclaration = expected.ownership === 'external' && !declaredExternal;
     const verifiedMarketplaceScriptPath = context.kind === 'marketplace_psbt' &&
@@ -511,9 +513,14 @@ function analyzeParsed(
       const externalPurchase = context.kind === 'provider_psbt' && protectedInput.ownership === 'external' &&
         !protectedInput.classification.unsupportedAssetDetected && protectedInput.classification.satRanges === null &&
         protectedInput.classification.inscriptions.length > 0;
+      const communityAcquisition = context.kind === 'community_vault_acquisition' &&
+        protectedInput.ownership === 'external' &&
+        !protectedInput.classification.unsupportedAssetDetected &&
+        protectedInput.classification.satRanges === null &&
+        protectedInput.classification.inscriptions.length > 0;
       const expectedIds = new Set(protectedInput.classification.inscriptions.map((item) => item.inscriptionId));
       const flows = context.protectedSatFlow.filter((flow) => flow.inputIndex === inputIndex);
-      const safelyReceived = externalPurchase && flows.length === expectedIds.size &&
+      const safelyReceived = (externalPurchase || communityAcquisition) && flows.length === expectedIds.size &&
         new Set(flows.map((flow) => flow.inscriptionId)).size === expectedIds.size &&
         flows.every((flow) => {
           const output = context.outputs[flow.outputIndex];
@@ -525,8 +532,10 @@ function analyzeParsed(
           return expectedIds.has(flow.inscriptionId) && flow.inputOffset >= 0n &&
             flow.inputOffset < protectedInput.valueSats && output !== undefined &&
             flow.outputOffset >= 0n && flow.outputOffset < output.valueSats &&
-            inputPosition === outputPosition && analyzedOutput?.ownership === 'wallet' &&
-            output.derivation?.lane === 'ordinals';
+            inputPosition === outputPosition &&
+            (communityAcquisition
+              ? analyzedOutput?.ownership === 'external'
+              : analyzedOutput?.ownership === 'wallet' && output.derivation?.lane === 'ordinals');
         });
       if (!permitted.has(inputIndex) && !safelyReceived) {
         violations.push({ code: 'unsafe_input_classification', inputIndex });

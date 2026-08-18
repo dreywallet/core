@@ -43,6 +43,17 @@ export interface FinalizedCommunityVaultAcquisitionV1 {
   feeRateSatPerKvB: string;
 }
 
+export interface CombinedCommunityVaultAcquisitionPsbtV1
+  extends CommunityVaultAcquisitionPsbtValidationV1 {
+  version: 1;
+}
+
+export interface FinalizedCommunityVaultAcquisitionPsbtV1
+  extends FinalizedCommunityVaultAcquisitionV1 {
+  psbtHex: string;
+  psbtHash: string;
+}
+
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value !== null && typeof value === 'object') {
@@ -590,6 +601,82 @@ export function validateCommunityVaultAcquisitionPsbt(
     psbtHash: bytesToHex(getCryptoProvider().sha256(bytes)),
     finalizedInputIndexes,
   };
+}
+
+/**
+ * Deterministically combines independently signed acquisition PSBTs. Every
+ * candidate is validated against the frozen policy and exact transaction
+ * before any signature material is admitted.
+ */
+export function combineCommunityVaultAcquisitionPsbts(input: {
+  policy: CommunityVaultPolicyV1;
+  plan: CommunityVaultAcquisitionPlanV1;
+  psbtHexes: string[];
+}): CombinedCommunityVaultAcquisitionPsbtV1 {
+  if (input.psbtHexes.length === 0 || input.psbtHexes.length > input.plan.inputs.length) {
+    throw new Error('Community Vault acquisition requires one unique PSBT per signer');
+  }
+  const candidates = input.psbtHexes.map((psbtHex) => ({
+    psbtHex,
+    validation: validateCommunityVaultAcquisitionPsbt(input.policy, input.plan, psbtHex),
+  })).sort((left, right) => left.validation.psbtHash.localeCompare(right.validation.psbtHash));
+  if (new Set(candidates.map(({ validation }) => validation.psbtHash)).size !== candidates.length) {
+    throw new Error('duplicate Community Vault acquisition PSBT cannot be combined');
+  }
+  const claimedInputs = new Set<number>();
+  for (const candidate of candidates) {
+    if (candidate.validation.finalizedInputIndexes.length === 0) {
+      throw new Error('Community Vault acquisition signer added no finalized input');
+    }
+    for (const index of candidate.validation.finalizedInputIndexes) {
+      if (claimedInputs.has(index)) {
+        throw new Error('Community Vault acquisition input was signed by more than one package');
+      }
+      claimedInputs.add(index);
+    }
+  }
+  const combined = Transaction.fromPSBT(
+    hexToBytes(constructCommunityVaultAcquisitionPsbt(input.policy, input.plan)),
+    { PSBTVersion: 0, lowR: true },
+  );
+  for (const candidate of candidates) {
+    combined.combine(Transaction.fromPSBT(hexToBytes(candidate.psbtHex), { PSBTVersion: 0, lowR: true }));
+  }
+  return validateCommunityVaultAcquisitionPsbt(
+    input.policy,
+    input.plan,
+    bytesToHex(combined.toPSBT(0)),
+  );
+}
+
+/** Finalizes every ordinary acquisition input and returns a verified raw transaction without broadcasting it. */
+export function finalizeCommunityVaultAcquisitionPsbt(input: {
+  policy: CommunityVaultPolicyV1;
+  plan: CommunityVaultAcquisitionPlanV1;
+  psbtHex: string;
+}): FinalizedCommunityVaultAcquisitionPsbtV1 {
+  validateCommunityVaultAcquisitionPsbt(input.policy, input.plan, input.psbtHex);
+  const tx = Transaction.fromPSBT(hexToBytes(input.psbtHex), { PSBTVersion: 0, lowR: true });
+  for (let index = 0; index < input.plan.inputs.length; index += 1) {
+    if ((tx.getInput(index).finalScriptWitness?.length ?? 0) === 0) {
+      try {
+        tx.finalizeIdx(index);
+      } catch {
+        throw new Error(`Community Vault acquisition input ${index} is not signed`);
+      }
+    }
+  }
+  const psbtHex = bytesToHex(tx.toPSBT(0));
+  const validation = validateCommunityVaultAcquisitionPsbt(input.policy, input.plan, psbtHex);
+  if (validation.finalizedInputIndexes.length !== input.plan.inputs.length) {
+    throw new Error('Community Vault acquisition is not fully signed');
+  }
+  const finalized = verifyFinalizedCommunityVaultAcquisition({
+    policy: input.policy,
+    plan: input.plan,
+    transactionHex: bytesToHex(tx.extract()),
+  });
+  return { ...finalized, psbtHex, psbtHash: validation.psbtHash };
 }
 
 function verifyPartialInputSignature(
