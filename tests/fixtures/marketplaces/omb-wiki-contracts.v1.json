@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://ordinalmaxibiz.wiki",
+  "network": "mainnet",
+  "sanitized": true,
+  "wallet": {
+    "paymentAddress": "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3",
+    "ordinalsAddress": "bc1qqgpqyqszqgpqyqszqgpqyqszqgpqyqsz4desz8"
+  },
+  "ordnet": {
+    "marketplaceId": "ordnet",
+    "templateVersion": "omb-wiki-ordnet-buy-v1",
+    "preflight": {
+      "purchaseAnchorUtxoId": "9999999999999999999999999999999999999999999999999999999999999999:0",
+      "expectedSettlementTxid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedListingTransferTxids": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "signInputs": { "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3": [1] }
+    },
+    "psbtBase64": "cHNidP8BALkCAAAAAhERERERERERERERERERERERERERERERERERERERERERAAAAAAD/////IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIBAAAAAP////8DECcAAAAAAAAWABQCAgICAgICAgICAgICAgICAgICAqCGAQAAAAAAFgAUAwMDAwMDAwMDAwMDAwMDAwMDAwMoIwAAAAAAABYAFAEBAQEBAQEBAQEBAQEBAQEBAQEBAAAAAAABAR8QJwAAAAAAABYAFAQEBAQEBAQEBAQEBAQEBAQEBAQEAAEBH7CtAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAA"
+  },
+  "satflow": {
+    "marketplaceId": "satflow",
+    "templateVersion": "omb-wiki-satflow-secure-buy-v1",
+    "paymentPreparation": {
+      "stage": "payment-prep",
+      "signInputs": { "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3": [0] },
+      "psbtBase64": "cHNidP8BAFICAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVAAAAAAD/////AdjQAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAAAAEBH8DUAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAA=="
+    },
+    "purchase": {
+      "stage": "purchase",
+      "signInputs": { "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3": [1] },
+      "psbtBase64": "cHNidP8BALkCAAAAAhERERERERERERERERERERERERERERERERERERERERERAAAAAAD/////IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIBAAAAAP////8DECcAAAAAAAAWABQCAgICAgICAgICAgICAgICAqCGAQAAAAAAFgAUAwMDAwMDAwMDAwMDAwMDAwMDAwMoIwAAAAAAABYAFAEBAQEBAQEBAQEBAQEBAQEBAQEBAAAAAAABAR8QJwAAAAAAABYAFAQEBAQEBAQEBAQEBAQEBAQEBAQEAAEBH7CtAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAA"
+    }
+  }
+}

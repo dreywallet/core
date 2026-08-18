@@ -9,10 +9,11 @@
 import { z } from 'zod';
 import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
+import { PROVIDER_MAX_PSBT_INPUTS } from '../domain/transactions/provider-psbt-limits';
 
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
-export const PROVIDER_MAX_SIGN_INPUTS = 200;
+export const PROVIDER_MAX_SIGN_INPUTS = PROVIDER_MAX_PSBT_INPUTS;
 
 export const providerNetworkSchema = z.enum(['Mainnet', 'Signet']);
 export type ProviderNetwork = z.infer<typeof providerNetworkSchema>;

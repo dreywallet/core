@@ -15,6 +15,7 @@ import {
 } from '../../src/domain/marketplaces/ordnet-script-path';
 import type { MarketplaceContext } from '../../src/domain/marketplaces/types';
 import { assertOrdnetSubmitBinding, assertSequentialMarketplaceStep } from '../../src/domain/marketplaces/contracts';
+import { PROVIDER_MAX_PSBT_OUTPUTS } from '../../src/domain/transactions/provider-psbt-limits';
 
 const context: MarketplaceContext = {
   version: 1,
@@ -44,6 +45,20 @@ function flexiblePsbt(sighash = SigHash.SINGLE_ANYONECANPAY): string {
   return bytesToBase64(tx.toPSBT());
 }
 
+it('rejects a marketplace PSBT with too many outputs before marketplace analysis', () => {
+  const tx = new Transaction({ lowR: true });
+  tx.addInput({
+    txid: '11'.repeat(32), index: 0, sighashType: SigHash.ALL,
+    witnessUtxo: { script: hexToBytes(`0014${'22'.repeat(20)}`), amount: 10_000n },
+  });
+  const script = hexToBytes(`0014${'33'.repeat(20)}`);
+  for (let index = 0; index <= PROVIDER_MAX_PSBT_OUTPUTS; index += 1) {
+    tx.addOutput({ script, amount: 1n });
+  }
+  expect(() => inspectMarketplacePsbt(bytesToBase64(tx.toPSBT())))
+    .toThrow(`PSBT output count exceeds ${PROVIDER_MAX_PSBT_OUTPUTS}`);
+});
+
 describe('compile-time marketplace registry', () => {
   it('has exact HTTPS origins, no collisions, and only reviewed sighashes', () => {
     expect(() => assertMarketplaceRegistryIntegrity()).not.toThrow();
@@ -67,7 +82,8 @@ describe('compile-time marketplace registry', () => {
       origin: 'https://satflow.com', network: 'mainnet', method: 'signPsbt',
       context: { ...context, templateVersion: 'remote-v2' }, candidate,
     })).toMatchObject({ status: 'known_marketplace_unknown_version', templateId: null });
-    expect(MARKETPLACE_TEMPLATES.filter((entry) => entry.marketplaceId === 'satflow')
+    expect(MARKETPLACE_TEMPLATES.filter((entry) => entry.marketplaceId === 'satflow' &&
+      !entry.origins.includes('https://ordinalmaxibiz.wiki'))
       .every((entry) => entry.activation === 'fixture_only')).toBe(true);
     // Reviewed 2026-08-10: ord.net single-inscription trading is enabled from
     // the published Trading API 1.0.0 contract; the v2 collection/trait
@@ -93,6 +109,50 @@ describe('compile-time marketplace registry', () => {
       status: 'known_template_mismatch', templateId: 'satflow-cancel-listing',
       reason: expect.stringContaining('fixture-backed'),
     });
+  });
+
+  it('resolves the exact OMB Wiki origin by marketplace ID and rejects altered contracts', () => {
+    const candidate = inspectMarketplacePsbt(flexiblePsbt(SigHash.ALL));
+    const common: MarketplaceContext = {
+      version: 1,
+      marketplaceId: 'ordnet',
+      templateVersion: 'omb-wiki-ordnet-buy-v1',
+      action: 'buy', role: 'buyer', assetKind: 'inscription', workflowId: 'omb-buy-1',
+      step: 1, stepCount: 1,
+      identifiers: {
+        listingId: 'listing-1', inscriptionId: `${'11'.repeat(32)}i0`,
+        purchaseAnchorUtxoId: `${'22'.repeat(32)}:0`,
+      },
+      economics: {
+        priceSats: '20000', totalSats: '21000', buyerDebitSats: '21000',
+        assetDestination: 'bc1qombdestination',
+      },
+      selectedInputIndexes: [0], expectedTxids: ['33'.repeat(32), '44'.repeat(32)],
+      expiresAt: 1_900_000_000_000, broadcaster: 'site',
+    };
+    expect(resolveMarketplaceRequest({
+      origin: 'https://ordinalmaxibiz.wiki', network: 'mainnet', method: 'signPsbt',
+      context: common, candidate, selectedInputIndexes: [0],
+    })).toMatchObject({ status: 'recognized', templateId: 'omb-wiki-ordnet-buy' });
+
+    const satflow: MarketplaceContext = {
+      ...common, marketplaceId: 'satflow', templateVersion: 'omb-wiki-satflow-secure-buy-v1',
+      action: 'secure_buy', step: 2, stepCount: 2, stage: 'purchase',
+      revision: 'preflight-digest', expectedTxids: undefined,
+      identifiers: { listingId: 'listing-1', inscriptionId: `${'11'.repeat(32)}i0` },
+    };
+    expect(resolveMarketplaceRequest({
+      origin: 'https://ordinalmaxibiz.wiki', network: 'mainnet', method: 'signPsbt',
+      context: satflow, candidate, selectedInputIndexes: [0],
+    })).toMatchObject({ status: 'recognized', templateId: 'omb-wiki-satflow-secure-buy' });
+    expect(resolveMarketplaceRequest({
+      origin: 'https://www.ordinalmaxibiz.wiki', network: 'mainnet', method: 'signPsbt',
+      context: common, candidate, selectedInputIndexes: [0],
+    })).toMatchObject({ status: 'unknown_marketplace' });
+    expect(resolveMarketplaceRequest({
+      origin: 'https://ordinalmaxibiz.wiki', network: 'mainnet', method: 'signPsbt',
+      context: { ...common, marketplaceId: 'satflow' }, candidate, selectedInputIndexes: [0],
+    })).toMatchObject({ status: 'known_marketplace_unknown_version' });
   });
 
   it('recognizes an enabled ord.net request only with its full preflight binding', () => {

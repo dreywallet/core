@@ -13,7 +13,7 @@
  *
  *   plan → (sign, once per role, possibly on different machines) → finalize
  */
-import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { installNodeCryptoProvider, nodeCryptoProvider, sha256Hex } from './crypto-node';
 import { deriveLadder, verifyKitHex, type VerifiedKit } from './kit';
@@ -43,8 +43,15 @@ import {
   serializeRecoveryCBackupCheckResponse,
   serializeRecoveryCSetupResponse,
 } from '../../src/domain/vault/multisig-encoding';
+import { readBoundedRegularFile } from './bounded-file';
 
 export const TOOL_VERSION = 'drey-vault-recovery-v1';
+export const RECOVERY_UTXO_FILE_MAX_BYTES = 8 * 1024 * 1024;
+export const RECOVERY_MAX_UTXOS = 10_000;
+export const RECOVERY_SESSION_MAX_BYTES = 64 * 1024 * 1024;
+export const RECOVERY_PSBT_HEX_MAX_BYTES = 32 * 1024 * 1024;
+export const RECOVERY_TRANSACTION_HEX_MAX_BYTES = 32 * 1024 * 1024;
+export const RECOVERY_MAX_SEARCH_DEPTH = 100_000;
 
 interface Session {
   format: typeof TOOL_VERSION;
@@ -86,28 +93,44 @@ function optionalBigint(args: Args, name: string): bigint | undefined {
 }
 
 function loadKit(args: Args): VerifiedKit {
-  return verifyKitHex(readBoundedPublicFile(required(args, 'kit'), 4_000_000, 'recovery kit').toString('utf8'));
-}
-
-function readBoundedPublicFile(path: string, maximumBytes: number, label: string): Buffer {
-  const noFollow = 'O_NOFOLLOW' in constants ? constants.O_NOFOLLOW : 0;
-  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
-  try {
-    const details = fstatSync(descriptor);
-    if (!details.isFile()) throw new Error(`${label} must be a regular file`);
-    if (details.size > maximumBytes) throw new Error(`${label} exceeds the ${maximumBytes}-byte input limit`);
-    return readFileSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
+  return verifyKitHex(readBoundedRegularFile(required(args, 'kit'), 4_000_000, 'recovery kit').toString('utf8'));
 }
 
 function loadSession(path: string): Session {
-  const session = JSON.parse(readFileSync(path, 'utf8')) as Session;
+  const session = JSON.parse(readBoundedRegularFile(
+    path, RECOVERY_SESSION_MAX_BYTES, 'recovery session',
+  ).toString('utf8')) as Session;
   if (session.format !== TOOL_VERSION) {
     throw new Error(`unrecognized session file format: ${String(session.format)}`);
   }
   return session;
+}
+
+export function parseRecoveryUtxos(value: unknown): SuppliedUtxo[] {
+  const supplied = Array.isArray(value)
+    ? value
+    : value !== null && typeof value === 'object'
+      ? (value as { utxos?: unknown }).utxos
+      : undefined;
+  if (!Array.isArray(supplied)) {
+    throw new Error('the UTXO file must be an array, or an object with a "utxos" array');
+  }
+  if (supplied.length > RECOVERY_MAX_UTXOS) {
+    throw new Error(`the UTXO file exceeds the ${RECOVERY_MAX_UTXOS}-entry input limit`);
+  }
+  return supplied as SuppliedUtxo[];
+}
+
+export function parseRecoverySearchDepth(value: string | true | undefined): number {
+  const raw = value ?? '100';
+  if (typeof raw !== 'string' || !/^(?:0|[1-9][0-9]*)$/u.test(raw)) {
+    throw new Error('--search-depth must be a non-negative integer');
+  }
+  const depth = Number(raw);
+  if (!Number.isSafeInteger(depth) || depth > RECOVERY_MAX_SEARCH_DEPTH) {
+    throw new Error(`--search-depth must not exceed ${RECOVERY_MAX_SEARCH_DEPTH}`);
+  }
+  return depth;
 }
 
 function saveSession(path: string, session: Session): void {
@@ -285,7 +308,7 @@ async function cmdCreateRecoveryC(args: Args): Promise<void> {
   assertControllingTerminal();
   const target = newOutputPath(args);
   const response = await createRecoveryCResponse({
-    challengeBytes: new Uint8Array(readBoundedPublicFile(
+    challengeBytes: new Uint8Array(readBoundedRegularFile(
       required(args, 'challenge'), 65_536, 'Recovery C setup challenge',
     )),
     io: recoveryCIo,
@@ -305,7 +328,7 @@ async function cmdVerifyRecoveryC(args: Args): Promise<void> {
   const verifiedKit = loadKit(args);
   const artifactDigest = sha256Hex(readFileSync(process.argv[1]!));
   const challenge = readRecoveryCBackupChallenge(
-    new Uint8Array(readBoundedPublicFile(
+    new Uint8Array(readBoundedRegularFile(
       required(args, 'challenge'), 65_536, 'Recovery C backup-check challenge',
     )),
     verifiedKit,
@@ -339,10 +362,10 @@ function cmdDeriveAddresses(args: Args): void {
 
 async function cmdPlan(args: Args): Promise<void> {
   const { identity } = loadKit(args);
-  const utxoFile = JSON.parse(readFileSync(required(args, 'utxos'), 'utf8')) as
-    SuppliedUtxo[] | { utxos: SuppliedUtxo[] };
-  const supplied = Array.isArray(utxoFile) ? utxoFile : utxoFile.utxos;
-  if (!Array.isArray(supplied)) throw new Error('the UTXO file must be an array, or an object with a "utxos" array');
+  const utxoFile = JSON.parse(readBoundedRegularFile(
+    required(args, 'utxos'), RECOVERY_UTXO_FILE_MAX_BYTES, 'UTXO file',
+  ).toString('utf8')) as unknown;
+  const supplied = parseRecoveryUtxos(utxoFile);
 
   const feeRateSatPerVb = BigInt(required(args, 'fee-rate'));
   if (feeRateSatPerVb > FEE_RATE_ACKNOWLEDGEMENT_THRESHOLD_SAT_PER_VB) {
@@ -356,7 +379,7 @@ async function cmdPlan(args: Args): Promise<void> {
     }
   }
 
-  const inputs = resolveInputs(identity, supplied, Number(args.flags.get('search-depth') ?? 100));
+  const inputs = resolveInputs(identity, supplied, parseRecoverySearchDepth(args.flags.get('search-depth')));
   const built = buildRecoveryPlan({
     identity, inputs,
     destinationAddress: required(args, 'to'),
@@ -368,7 +391,8 @@ async function cmdPlan(args: Args): Promise<void> {
 
   const session: Session = {
     format: TOOL_VERSION,
-    kitHex: readFileSync(required(args, 'kit'), 'utf8').trim().replace(/\s+/gu, ''),
+    kitHex: readBoundedRegularFile(required(args, 'kit'), 4_000_000, 'recovery kit')
+      .toString('utf8').trim().replace(/\s+/gu, ''),
     plan: built.plan,
     unsignedPsbtHex: constructVaultPsbt(identity, built.plan),
     partials: [],
@@ -432,7 +456,9 @@ function cmdCombine(args: Args): void {
   // partial-signature results are combined instead.
   const extraPaths = (args.flags.get('psbt') === undefined ? [] : [String(args.flags.get('psbt'))])
     .concat(args._.slice(1));
-  const psbtHexes = extraPaths.map((path) => readFileSync(path, 'utf8').trim());
+  const psbtHexes = extraPaths.map((path) => readBoundedRegularFile(
+    path, RECOVERY_PSBT_HEX_MAX_BYTES, 'partial PSBT',
+  ).toString('utf8').trim());
   const combined = psbtHexes.length > 0
     ? combineRawPsbts(identity, session.plan, psbtHexes)
     : combineResults(identity, session.plan, session.partials);
@@ -474,7 +500,9 @@ async function cmdFinalize(args: Args): Promise<void> {
 function cmdVerifyTx(args: Args): void {
   const session = loadSession(required(args, 'session'));
   const { identity } = verifyKitHex(session.kitHex);
-  const transactionHex = readFileSync(required(args, 'tx'), 'utf8').trim();
+  const transactionHex = readBoundedRegularFile(
+    required(args, 'tx'), RECOVERY_TRANSACTION_HEX_MAX_BYTES, 'transaction',
+  ).toString('utf8').trim();
   const verified = finalize(identity, session.plan, combineResults(identity, session.plan, session.partials).psbtHex);
   if (verified.transactionHex !== transactionHex) {
     throw new Error('the supplied transaction is not the one this plan and these signatures produce');

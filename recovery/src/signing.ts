@@ -13,7 +13,6 @@
  * the machine and lands in shell history — an ordinary convenience that would
  * quietly undo the offline ceremony this tool exists to serve.
  */
-import { readFileSync } from 'node:fs';
 import { HDKey } from '@scure/bip32';
 import {
   bip32Versions,
@@ -31,12 +30,15 @@ import {
   signVaultPartialSignature,
   verifyFinalizedVaultTransaction,
 } from '../../src/domain/vault/multisig-psbt';
+import { readBoundedRegularFile, readBoundedStdin } from './bounded-file';
+
+export const RECOVERY_MNEMONIC_MAX_BYTES = 4_096;
 
 /** Read BIP39 words from a file or from stdin, never from argv. */
 export function readMnemonic(source: string): string {
   const raw = source === '-'
-    ? readFileSync(0, 'utf8')
-    : readFileSync(source, 'utf8');
+    ? readBoundedStdin(RECOVERY_MNEMONIC_MAX_BYTES, 'BIP39 mnemonic').toString('utf8')
+    : readBoundedRegularFile(source, RECOVERY_MNEMONIC_MAX_BYTES, 'BIP39 mnemonic').toString('utf8');
   const mnemonic = raw.replace(/#.*$/gmu, '').trim().replace(/\s+/gu, ' ').toLowerCase();
   if (mnemonic.length === 0) throw new Error('no BIP39 words were supplied');
   if (!validateMnemonic(mnemonic)) {

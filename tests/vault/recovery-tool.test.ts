@@ -12,7 +12,7 @@
  * loop that signed with everything would silently never test either drill.
  */
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HDKey } from '@scure/bip32';
@@ -51,7 +51,14 @@ import {
 } from '../../recovery/src/plan';
 import { reviewFacts, renderReview } from '../../recovery/src/display';
 import { combineResults, finalize, signAsRole } from '../../recovery/src/signing';
-import { writeTransactionHexFile } from '../../recovery/src/cli';
+import {
+  RECOVERY_MAX_SEARCH_DEPTH,
+  RECOVERY_MAX_UTXOS,
+  parseRecoverySearchDepth,
+  parseRecoveryUtxos,
+  writeTransactionHexFile,
+} from '../../recovery/src/cli';
+import { readBoundedRegularFile } from '../../recovery/src/bounded-file';
 
 beforeAll(() => installTestCryptoProvider());
 
@@ -144,6 +151,29 @@ function utxosFor(h: Harness, entries: readonly { branch: 'receive' | 'change'; 
 }
 
 describe('the standalone recovery package', () => {
+  it('enforces the file byte limit without changing normal reads', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'drey-recovery-bound-'));
+    const target = join(directory, 'input');
+    try {
+      writeFileSync(target, '12345');
+      expect(readBoundedRegularFile(target, 5, 'test input').toString()).toBe('12345');
+      expect(() => readBoundedRegularFile(target, 4, 'test input'))
+        .toThrow('test input exceeds the 4-byte input limit');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects impractical UTXO counts and non-finite derivation searches', () => {
+    expect(() => parseRecoveryUtxos(new Array(RECOVERY_MAX_UTXOS + 1).fill(null)))
+      .toThrow(`${RECOVERY_MAX_UTXOS}-entry input limit`);
+    expect(parseRecoverySearchDepth(String(RECOVERY_MAX_SEARCH_DEPTH)))
+      .toBe(RECOVERY_MAX_SEARCH_DEPTH);
+    expect(() => parseRecoverySearchDepth('Infinity')).toThrow('non-negative integer');
+    expect(() => parseRecoverySearchDepth(String(RECOVERY_MAX_SEARCH_DEPTH + 1)))
+      .toThrow(`must not exceed ${RECOVERY_MAX_SEARCH_DEPTH}`);
+  });
+
   it('writes a relay-ready transaction body with no trailing newline', () => {
     const directory = mkdtempSync(join(tmpdir(), 'drey-recovery-'));
     const target = join(directory, 'tx.hex');

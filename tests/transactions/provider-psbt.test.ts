@@ -9,11 +9,13 @@ import {
   bindProviderPsbtPlanPreviews,
   createProviderPsbtPlan,
   partitionOrdinalSatFlow,
+  providerPsbtOutpoints,
   signProviderPsbtPlan,
 } from '../../src/domain/transactions/provider-psbt';
 import type { ProviderPsbtPlanV3 } from '../../src/domain/transactions/provider-psbt';
 import type { UtxoClassification } from '../../src/domain/gateway/contract';
 import { publicAccountFromSeed } from '../../src/domain/accounts/public-account';
+import { PROVIDER_MAX_PSBT_INPUTS } from '../../src/domain/transactions/provider-psbt-limits';
 
 beforeAll(() => installTestCryptoProvider());
 
@@ -29,6 +31,21 @@ const binding = {
   documentId: '123e4567-e89b-42d3-a456-426614174000',
   requestNonce: '123e4567-e89b-42d3-a456-426614174001', providerMethod: 'signPsbt' as const,
 };
+
+it('rejects a provider PSBT with too many inputs before outpoint analysis', () => {
+  const tx = new Transaction({ lowR: true });
+  const script = Uint8Array.from([0x00, 0x14, ...new Uint8Array(20)]);
+  for (let index = 0; index <= PROVIDER_MAX_PSBT_INPUTS; index += 1) {
+    tx.addInput({
+      txid: index.toString(16).padStart(64, '0'),
+      index: 0,
+      witnessUtxo: { script, amount: 1n },
+    });
+  }
+  tx.addOutput({ script, amount: 1n });
+  expect(() => providerPsbtOutpoints(bytesToBase64(tx.toPSBT())))
+    .toThrow(`PSBT input count exceeds ${PROVIDER_MAX_PSBT_INPUTS}`);
+});
 
 function bindTestPlaceholders(plan: ProviderPsbtPlanV3): ProviderPsbtPlanV3 {
   return bindProviderPsbtPlanPreviews(plan, {

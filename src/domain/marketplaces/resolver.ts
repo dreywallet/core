@@ -2,9 +2,10 @@ import { SigHash, Transaction } from '@scure/btc-signer';
 import type { Network } from '../keys/derivation';
 import { base64ToBytes, bytesToBase64 } from '../vault/encoding';
 import { scriptKind } from '../transactions/fees';
-import { MARKETPLACE_TEMPLATES, marketplaceForOrigin, type MarketplaceTemplate } from './registry';
+import { MARKETPLACE_TEMPLATES, marketplacesForOrigin, type MarketplaceTemplate } from './registry';
 import type { MarketplaceContext, MarketplaceResolution } from './types';
 import { validateMarketplaceContextContract } from './contracts';
+import { assertProviderPsbtItemCounts } from '../transactions/provider-psbt-limits';
 
 export interface MarketplacePsbtCandidate {
   canonicalPsbtBase64: string;
@@ -29,6 +30,7 @@ export function inspectMarketplacePsbt(psbtBase64: string): MarketplacePsbtCandi
   const bytes = base64ToBytes(psbtBase64);
   if (bytesToBase64(bytes) !== psbtBase64) throw new Error('non-canonical PSBT base64');
   const tx = Transaction.fromPSBT(bytes, { lowR: true });
+  assertProviderPsbtItemCounts(tx);
   if (tx.inputsLength === 0 || tx.outputsLength === 0) throw new Error('empty PSBT');
   const sighashes: number[] = [];
   const flexibleInputIndexes: number[] = [];
@@ -80,27 +82,31 @@ export function resolveMarketplaceRequest(input: {
   selectedInputIndexes?: readonly number[];
   method: 'signPsbt' | 'signMessage';
 }): MarketplaceResolution {
-  const knownByOrigin = marketplaceForOrigin(input.origin);
+  const knownByOrigin = marketplacesForOrigin(input.origin);
   const flexible = input.candidate?.flexible ?? false;
-  if (knownByOrigin === null) {
+  if (knownByOrigin.length === 0) {
     return result('unknown_marketplace', null, null, flexible,
       'The browser-derived origin is not in the compile-time marketplace registry.');
   }
-  if (!input.context || input.context.marketplaceId !== knownByOrigin) {
-    return result('known_template_mismatch', null, knownByOrigin, flexible,
+  if (!input.context || !knownByOrigin.includes(input.context.marketplaceId as never)) {
+    return result('known_template_mismatch', null,
+      knownByOrigin.length === 1 ? knownByOrigin[0]! : null, flexible,
       'The request did not provide matching versioned marketplace context.');
   }
-  if (input.context.version !== 1 || input.context.templateVersion !== 'drey-1') {
-    return result('known_marketplace_unknown_version', null, knownByOrigin, flexible,
+  const marketplaceId = input.context.marketplaceId as MarketplaceResolution['marketplaceId'];
+  if (input.context.version !== 1 || !MARKETPLACE_TEMPLATES.some((entry) =>
+    entry.marketplaceId === marketplaceId && entry.origins.includes(input.origin) &&
+    entry.templateVersion === input.context!.templateVersion)) {
+    return result('known_marketplace_unknown_version', null, marketplaceId, flexible,
       'The marketplace context version is not supported by this extension release.');
   }
   const candidates = MARKETPLACE_TEMPLATES.filter((entry) =>
-    entry.marketplaceId === knownByOrigin && entry.origins.includes(input.origin) &&
+    entry.marketplaceId === marketplaceId && entry.origins.includes(input.origin) &&
     entry.templateVersion === input.context!.templateVersion && entry.action === input.context!.action &&
     entry.role === input.context!.role && entry.assetKind === input.context!.assetKind &&
     entry.networks.includes(input.network));
   if (candidates.length === 0) {
-    return result('unsupported_action', null, knownByOrigin, flexible,
+    return result('unsupported_action', null, marketplaceId, flexible,
       'This marketplace action, role, asset, or network is not supported.');
   }
   if (candidates.length > 1) {
@@ -108,27 +114,27 @@ export function resolveMarketplaceRequest(input: {
     // it runs in CI rather than at load: bricking the worker over a table defect
     // would take the whole wallet down. Resolve nothing instead of silently
     // taking the first match — an ambiguous policy is not a policy.
-    return result('known_template_mismatch', null, knownByOrigin, flexible,
+    return result('known_template_mismatch', null, marketplaceId, flexible,
       'More than one pinned template matches this request.');
   }
   const template = candidates[0]!;
   const contract = validateMarketplaceContextContract(input.context);
   if (!contract.ok) {
-    return result('known_template_mismatch', template, knownByOrigin, flexible, contract.reason);
+    return result('known_template_mismatch', template, marketplaceId, flexible, contract.reason);
   }
   if (input.method === 'signMessage') {
     if (template.steps.length !== 0 || input.context.step !== 1 || input.context.stepCount !== 1) {
-      return result('known_template_mismatch', template, knownByOrigin, flexible,
+      return result('known_template_mismatch', template, marketplaceId, flexible,
         'The message request does not match the pinned message template.');
     }
     if (template.activation !== 'enabled') {
-      return result('known_template_mismatch', template, knownByOrigin, false,
+      return result('known_template_mismatch', template, marketplaceId, false,
         'This pinned template is fixture-backed and is not enabled for live signing.');
     }
-    return result('recognized', template, knownByOrigin, false, 'Exact origin and message template matched.');
+    return result('recognized', template, marketplaceId, false, 'Exact origin and message template matched.');
   }
   if (!input.candidate || input.candidate.byteLength > template.maxPsbtBytes) {
-    return result('known_template_mismatch', template, knownByOrigin, flexible, 'The PSBT is absent or exceeds the template limit.');
+    return result('known_template_mismatch', template, marketplaceId, flexible, 'The PSBT is absent or exceeds the template limit.');
   }
   const rule = template.steps.find((item) => item.step === input.context!.step) ??
     (template.stepCount === 'context' ? template.steps[0] : undefined);
@@ -139,14 +145,14 @@ export function resolveMarketplaceRequest(input: {
       (input.candidate.taprootScriptPathInputIndexes.some((index) => selected.includes(index)) &&
         !rule.allowTaprootScriptPath) ||
       (template.broadcaster !== 'context' && template.broadcaster !== input.context.broadcaster)) {
-    return result('known_template_mismatch', template, knownByOrigin, flexible,
+    return result('known_template_mismatch', template, marketplaceId, flexible,
       'The PSBT shape, step, sighash, or Taproot path differs from the pinned template.');
   }
   if (template.activation !== 'enabled') {
-    return result('known_template_mismatch', template, knownByOrigin, flexible,
+    return result('known_template_mismatch', template, marketplaceId, flexible,
       'This pinned template is fixture-backed and is not enabled for live signing.');
   }
-  return result('recognized', template, knownByOrigin, flexible, 'Exact origin, version, action, and candidate policy matched.');
+  return result('recognized', template, marketplaceId, flexible, 'Exact origin, version, action, and candidate policy matched.');
 }
 
 export function templateForResolution(resolution: MarketplaceResolution): MarketplaceTemplate | null {

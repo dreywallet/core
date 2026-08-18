@@ -7,7 +7,7 @@
  * is that changePassword runs two Argon2id derivations per vault — acceptable
  * for a rare operation over a handful of vaults.
  */
-import { aeadDecrypt, aeadEncrypt, deriveKek, KEY_BYTES, NONCE_BYTES, SALT_BYTES } from './crypto';
+import { AEAD_TAG_BYTES, aeadDecrypt, aeadEncrypt, deriveKek, KEY_BYTES, NONCE_BYTES, SALT_BYTES } from './crypto';
 import { entropyToMnemonic, mnemonicToSeed } from '../keys/mnemonic';
 import { base64ToBytes, bytesToBase64, bytesToUtf8, hexToBytes, utf8ToBytes } from './encoding';
 import { VaultError } from './errors';
@@ -16,6 +16,9 @@ import {
   dekAad,
   kdfParamsWithinBounds,
   payloadAad,
+  VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES,
+  VAULT_PAYLOAD_PLAINTEXT_MAX_BYTES,
+  VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES,
   vaultPayloadV1Schema,
   type AeadBox,
   type Argon2idParams,
@@ -55,6 +58,11 @@ export async function createVaultRecord(
     throw new Error('invalid vault payload: entropy, passphrase, and seed must describe one mnemonic');
   }
 
+  const payloadBytes = utf8ToBytes(JSON.stringify(args.payload));
+  if (payloadBytes.length > VAULT_PAYLOAD_PLAINTEXT_MAX_BYTES) {
+    payloadBytes.fill(0);
+    throw new Error(`vault payload exceeds ${VAULT_PAYLOAD_PLAINTEXT_MAX_BYTES} bytes`);
+  }
   const salt = deps.random(SALT_BYTES);
   const dek = deps.random(KEY_BYTES);
   let kek: Uint8Array | undefined;
@@ -72,7 +80,7 @@ export async function createVaultRecord(
       wrappedDek: aeadEncrypt(kek, dek, dekAad(1, args.vaultId), deps.random(NONCE_BYTES)),
       payload: aeadEncrypt(
         dek,
-        utf8ToBytes(JSON.stringify(args.payload)),
+        payloadBytes,
         payloadAad(1, args.vaultId),
         deps.random(NONCE_BYTES),
       ),
@@ -80,6 +88,7 @@ export async function createVaultRecord(
   } finally {
     kek?.fill(0);
     dek.fill(0);
+    payloadBytes.fill(0);
   }
 }
 
@@ -97,15 +106,26 @@ function tryBase64(b64: string): Uint8Array | undefined {
   }
 }
 
-const AEAD_TAG_BYTES = 16; // Poly1305 tag appended to every ciphertext
-
-function checkBox(box: AeadBox, what: string): void {
+function checkBox(
+  box: AeadBox,
+  what: string,
+  ciphertextBytes: { exact?: number; maximum?: number },
+): void {
+  if (box.nonceB64.length !== 4 * Math.ceil(NONCE_BYTES / 3)) {
+    throw new VaultError('tampered', `${what} nonce is malformed`);
+  }
   const nonce = tryBase64(box.nonceB64);
   if (!nonce || nonce.length !== NONCE_BYTES) {
     throw new VaultError('tampered', `${what} nonce is malformed`);
   }
+  const encodedMaximum = ciphertextBytes.exact ?? ciphertextBytes.maximum;
+  if (encodedMaximum !== undefined && box.ciphertextB64.length > 4 * Math.ceil(encodedMaximum / 3)) {
+    throw new VaultError('tampered', `${what} ciphertext is malformed`);
+  }
   const ciphertext = tryBase64(box.ciphertextB64);
-  if (!ciphertext || ciphertext.length <= AEAD_TAG_BYTES) {
+  if (!ciphertext || ciphertext.length <= AEAD_TAG_BYTES ||
+      (ciphertextBytes.exact !== undefined && ciphertext.length !== ciphertextBytes.exact) ||
+      (ciphertextBytes.maximum !== undefined && ciphertext.length > ciphertextBytes.maximum)) {
     throw new VaultError('tampered', `${what} ciphertext is malformed`);
   }
 }
@@ -123,12 +143,15 @@ function validateRecordStructure(record: VaultRecordV1): void {
   if (!kdfParamsWithinBounds(record.kdf)) {
     throw new VaultError('tampered', 'kdf params outside absolute bounds');
   }
+  if (record.kdf.saltB64.length !== 4 * Math.ceil(SALT_BYTES / 3)) {
+    throw new VaultError('tampered', 'kdf salt is malformed');
+  }
   const salt = tryBase64(record.kdf.saltB64);
   if (!salt || salt.length !== SALT_BYTES) {
     throw new VaultError('tampered', 'kdf salt is malformed');
   }
-  checkBox(record.wrappedDek, 'wrappedDek');
-  checkBox(record.payload, 'payload');
+  checkBox(record.wrappedDek, 'wrappedDek', { exact: VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES });
+  checkBox(record.payload, 'payload', { maximum: VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES });
 }
 
 async function unwrapDek(record: VaultRecordV1, password: string): Promise<Uint8Array> {
@@ -148,6 +171,7 @@ async function unwrapDek(record: VaultRecordV1, password: string): Promise<Uint8
  * session's). Never mutates or zeroizes `dek`; the caller owns it.
  */
 export function openVaultPayload(record: VaultRecordV1, dek: Uint8Array): VaultPayloadV1 {
+  checkBox(record.payload, 'payload', { maximum: VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES });
   let plaintext: Uint8Array;
   try {
     plaintext = aeadDecrypt(dek, record.payload, payloadAad(record.cipherVersion, record.vaultId));

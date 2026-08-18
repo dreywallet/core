@@ -11,6 +11,9 @@ import { base64ToBytes, bytesToBase64, utf8ToBytes } from '../../src/domain/vaul
 import {
   KDF_ABSOLUTE_BOUNDS,
   payloadAad,
+  VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES,
+  VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES,
+  vaultRecordV1Schema,
   vaultPayloadV1Schema,
   type VaultRecordV1,
 } from '../../src/domain/vault/record';
@@ -56,6 +59,15 @@ describe('createVaultRecord', () => {
         vaultPayloadV1Schema.safeParse({ ...makePayload(), entropyHex: '00'.repeat(bytes) }).success,
       ).toBe(false);
     }
+  });
+
+  it('keeps normal records within the persisted ciphertext bounds', async () => {
+    const record = await makeRecord('vault-sized');
+    expect(vaultRecordV1Schema.safeParse(record).success).toBe(true);
+    expect(base64ToBytes(record.wrappedDek.ciphertextB64))
+      .toHaveLength(VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES);
+    expect(base64ToBytes(record.payload.ciphertextB64).length)
+      .toBeLessThanOrEqual(VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES);
   });
 
   it('rejects a writer payload whose cached seed does not match entropy and passphrase', async () => {
@@ -193,6 +205,29 @@ describe('structurally corrupt records (provable tampering, no password needed)'
       ...r,
       payload: { ...r.payload, ciphertextB64: bytesToBase64(new Uint8Array(4)) },
     }));
+  });
+
+  it('oversized payload ciphertext is rejected before base64 decoding', async () => {
+    const record = await makeRecord('vault-a');
+    const oversized = {
+      ...record,
+      payload: {
+        ...record.payload,
+        ciphertextB64: 'A'.repeat(4 * Math.ceil((VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES + 3) / 3)),
+      },
+    };
+    expect(vaultRecordV1Schema.safeParse(oversized).success).toBe(false);
+    await expect(unlockVault(oversized, PASSWORD)).rejects.toMatchObject({ code: 'tampered' });
+  });
+
+  it('wrong-sized wrapped DEK ciphertext fails structural validation', async () => {
+    const record = await makeRecord('vault-a');
+    const malformed = {
+      ...record,
+      wrappedDek: { ...record.wrappedDek, ciphertextB64: bytesToBase64(new Uint8Array(47)) },
+    };
+    expect(vaultRecordV1Schema.safeParse(malformed).success).toBe(false);
+    await expect(unlockVault(malformed, PASSWORD)).rejects.toMatchObject({ code: 'tampered' });
   });
 
   it('inflated KDF params → tampered before any derivation runs (DoS guard)', async () => {

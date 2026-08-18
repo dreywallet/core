@@ -14,11 +14,13 @@ import type { MarketplaceContext, MarketplaceResolution } from '../marketplaces/
 import { publicAccountFromSeed } from '../accounts/public-account';
 import {
   analyzeMarketplaceCommitment,
+  assertMarketplaceBuyerPlan,
   assertMarketplaceWalletInputs,
   type MarketplaceCommitmentAnalysis,
 } from '../marketplaces/commitment';
 import { templateForResolution } from '../marketplaces/resolver';
 import { verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
+import { assertProviderPsbtItemCounts } from './provider-psbt-limits';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -172,6 +174,7 @@ export function providerPsbtOutpoints(psbtBase64: string): Array<{ txid: string;
   const bytes = base64ToBytes(psbtBase64);
   if (bytesToBase64(bytes) !== psbtBase64) throw new Error('non-canonical PSBT base64');
   const tx = Transaction.fromPSBT(bytes);
+  assertProviderPsbtItemCounts(tx);
   const outpoints: Array<{ txid: string; vout: number }> = [];
   for (let index = 0; index < tx.inputsLength; index += 1) {
     const item = tx.getInput(index);
@@ -329,6 +332,7 @@ export function createProviderPsbtPlan(input: {
   const decoded = base64ToBytes(input.psbtBase64);
   if (bytesToBase64(decoded) !== input.psbtBase64) throw new Error('non-canonical PSBT base64');
   const tx = Transaction.fromPSBT(decoded, { lowR: true });
+  assertProviderPsbtItemCounts(tx);
   if (tx.inputsLength === 0 || tx.outputsLength === 0) throw new Error('empty PSBT');
   const byOutpoint = new Map(input.classifications.map((item) => [`${item.txid}:${item.vout}`, item]));
   if (byOutpoint.size !== input.classifications.length) throw new Error('duplicate gateway classification');
@@ -547,6 +551,16 @@ export function createProviderPsbtPlan(input: {
   const feeSats = flexibleCommitment?.mode === 'partial'
     ? flexibleCommitment.walletFeeExposureSats
     : totalIn - totalOut;
+  if (input.marketplace) {
+    assertMarketplaceBuyerPlan({
+      planInputs,
+      outputs,
+      protectedSatFlow,
+      selectedInputIndexes: selectedMarketplaceIndexes,
+      feeSats,
+      context: input.marketplace.context,
+    });
+  }
   const vsize = estimateVsize(planInputs.map((item) => item.scriptPubKey), outputs.map((item) => item.scriptPubKey));
   const feeRateSatPerKvB = (feeSats * 1000n + vsize - 1n) / vsize;
   const psbt = tx.toPSBT();
@@ -732,6 +746,7 @@ export function signProviderPsbtPlan(input: {
   }
   const tx = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), { lowR: true });
   const beforeSigning = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), { lowR: true });
+  assertProviderPsbtItemCounts(tx);
   for (const index of selected) {
     const planned = input.plan.inputs[index];
     if (!planned || planned.ownership !== 'wallet' || !planned.derivation || planned.derivation.account !== input.plan.account) {

@@ -31,6 +31,11 @@ export function validateMarketplaceContextContract(context: MarketplaceContext):
       if (!ids?.inscriptionId || !economics?.totalSats || !economics.assetDestination) {
         return fail('Satflow purchase contract is missing inscription, total, or destination binding');
       }
+      if (context.templateVersion === 'omb-wiki-satflow-secure-buy-v1' &&
+          (!ids.listingId || !economics.priceSats || !economics.buyerDebitSats ||
+            !context.revision || !context.stage || !context.selectedInputIndexes)) {
+        return fail('OMB Wiki Satflow purchase is missing listing, debit, stage, revision, or signing-index binding');
+      }
     }
     return ok();
   }
@@ -39,14 +44,15 @@ export function validateMarketplaceContextContract(context: MarketplaceContext):
     // handles (anchor/purchase-anchor UUIDs, preflight tokens) and
     // expected-txid echoes. Every write must bind at least one of them so a
     // changed preflight invalidates the request instead of re-signing.
-    if (context.action !== 'authenticate' && !ids?.preflightHandle && !context.expectedTxids) {
+    if (context.action !== 'authenticate' && !ids?.preflightHandle &&
+        !ids?.purchaseAnchorUtxoId && !context.expectedTxids) {
       return fail('ord.net write is missing its preflight handle or expected-txid binding');
     }
     if (context.action === 'list' && !ids?.preflightHandle) {
       return fail('ord.net listing is missing its anchor UTXO handle');
     }
     if (context.action === 'buy' || context.action === 'counter_offer') {
-      if (!ids?.preflightHandle || !context.expectedTxids) {
+      if ((!ids?.preflightHandle && !ids?.purchaseAnchorUtxoId) || !context.expectedTxids) {
         return fail('ord.net purchase/counter is missing its anchor handle or expected settlement binding');
       }
     }
@@ -64,6 +70,11 @@ export function validateMarketplaceContextContract(context: MarketplaceContext):
       if (!economics?.totalSats || !economics.assetDestination) {
         return fail('ord.net purchase contract is missing total or owned destination binding');
       }
+    }
+    if (context.templateVersion === 'omb-wiki-ordnet-buy-v1' &&
+        (!ids?.listingId || !ids.inscriptionId || !ids.purchaseAnchorUtxoId ||
+          !economics?.priceSats || !economics.buyerDebitSats || !context.selectedInputIndexes)) {
+      return fail('OMB Wiki ord.net purchase is missing listing, inscription, anchor, debit, or signing-index binding');
     }
     if ((context.action === 'collection_offer' || context.action === 'trait_offer') &&
         (!ids?.preflightHandle || !context.expectedTxids || context.assetKind === 'inscription')) {

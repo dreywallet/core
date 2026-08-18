@@ -39,7 +39,8 @@ export interface MarketplaceTemplate {
 
 const SATFLOW_ORIGINS = ['https://satflow.com', 'https://www.satflow.com'] as const;
 const ORDNET_ORIGINS = ['https://ord.net', 'https://www.ord.net'] as const;
-const FIXTURE_DIGEST = '6dfcf557640a4c1d70031ba1452f26e4f7749fa3409f7faec956d44363d73431';
+const OMB_WIKI_ORIGIN = ['https://ordinalmaxibiz.wiki'] as const;
+const FIXTURE_DIGEST = 'cc85aecdb59b05de459d4e115a6705796e0c9b5f1731853c8cf5b894d2cfd5d7';
 const FIVE_MINUTES = 5 * 60_000;
 
 function step(
@@ -108,6 +109,12 @@ export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = Object.free
     templateVersion: 'drey-1', origins: SATFLOW_ORIGINS, action: 'offer', role: 'buyer',
     assetKind: 'inscription', networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
     steps: [step(1, [0, 1])], sourceVersion: '1.1.4-prod' }),
+  template({ marketplaceId: 'satflow', displayName: 'OMB Wiki · Satflow',
+    templateId: 'omb-wiki-satflow-secure-buy', templateVersion: 'omb-wiki-satflow-secure-buy-v1',
+    origins: OMB_WIKI_ORIGIN, action: 'secure_buy', role: 'buyer', assetKind: 'inscription',
+    networks: ['mainnet'], broadcaster: 'site', stepCount: 'context',
+    steps: [step(1, [0, 1]), step(2, [0, 1])], sourceVersion: 'omb-wiki-contract-v1',
+    activation: 'enabled' }),
 
   // ord.net Trading API 1.0.0 (developers.ord.net OpenAPI, accessed
   // 2026-08-10). Single-inscription trading flows are enabled; batch listing
@@ -129,6 +136,11 @@ export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = Object.free
     templateVersion: 'drey-1', origins: ORDNET_ORIGINS, action: 'buy', role: 'buyer',
     assetKind: 'inscription', networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
     steps: [step(1, [0, 1])], sourceVersion: 'trading-api-1.0.0', activation: 'enabled' }),
+  template({ marketplaceId: 'ordnet', displayName: 'OMB Wiki · ord.net',
+    templateId: 'omb-wiki-ordnet-buy', templateVersion: 'omb-wiki-ordnet-buy-v1',
+    origins: OMB_WIKI_ORIGIN, action: 'buy', role: 'buyer', assetKind: 'inscription',
+    networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
+    steps: [step(1, [0, 1])], sourceVersion: 'omb-wiki-contract-v1', activation: 'enabled' }),
   template({ marketplaceId: 'ordnet', displayName: 'ord.net', templateId: 'ordnet-offer',
     templateVersion: 'drey-1', origins: ORDNET_ORIGINS, action: 'offer', role: 'buyer',
     assetKind: 'inscription', networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
@@ -192,7 +204,12 @@ export function assertMarketplaceRegistryIntegrity(
     }
     // Reviewed activation scope (2026-08-10): only ord.net single-inscription
     // trading is enabled. Widening this scope is itself a policy release.
-    if (entry.activation === 'enabled' &&
+    const reviewedOmbBuyer = entry.origins.length === 1 &&
+      entry.origins[0] === OMB_WIKI_ORIGIN[0] && entry.role === 'buyer' &&
+      entry.assetKind === 'inscription' && entry.broadcaster === 'site' &&
+      ((entry.marketplaceId === 'ordnet' && entry.action === 'buy') ||
+        (entry.marketplaceId === 'satflow' && entry.action === 'secure_buy'));
+    if (entry.activation === 'enabled' && !reviewedOmbBuyer &&
         (entry.marketplaceId !== 'ordnet' || entry.assetKind !== 'inscription')) {
       throw new Error(`marketplace activation outside the reviewed scope ${entry.templateId}`);
     }
@@ -201,4 +218,9 @@ export function assertMarketplaceRegistryIntegrity(
 
 export function marketplaceForOrigin(origin: string): MarketplaceId | null {
   return MARKETPLACE_TEMPLATES.find((entry) => entry.origins.includes(origin))?.marketplaceId ?? null;
+}
+
+export function marketplacesForOrigin(origin: string): MarketplaceId[] {
+  return [...new Set(MARKETPLACE_TEMPLATES.filter((entry) => entry.origins.includes(origin))
+    .map((entry) => entry.marketplaceId))];
 }

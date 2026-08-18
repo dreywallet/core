@@ -49,6 +49,7 @@ export const marketplaceContextSchema = z.object({
     offerId: identifierSchema.optional(),
     inscriptionId: identifierSchema.optional(),
     preflightHandle: identifierSchema.optional(),
+    purchaseAnchorUtxoId: identifierSchema.optional(),
   }).strict().optional(),
   economics: z.object({
     priceSats: decimalSatsSchema.optional(),
@@ -57,9 +58,12 @@ export const marketplaceContextSchema = z.object({
     marketplaceFeeSats: decimalSatsSchema.optional(),
     royaltySats: decimalSatsSchema.optional(),
     minerFeeSats: decimalSatsSchema.optional(),
+    buyerDebitSats: decimalSatsSchema.optional(),
     payoutAddress: z.string().min(8).max(128).optional(),
     assetDestination: z.string().min(8).max(128).optional(),
   }).strict().optional(),
+  stage: z.enum(['payment-prep', 'purchase']).optional(),
+  selectedInputIndexes: z.array(z.number().int().nonnegative()).min(1).max(256).optional(),
   revision: z.string().min(1).max(128).optional(),
   // Preflight-promised transaction ids (ord.net Trading API 1.0.0): the page
   // echoes these at submit; binding them lets a changed preflight force a

@@ -10,6 +10,7 @@
  *   still authenticate.
  */
 import { z } from 'zod';
+import { base64ToBytes } from './encoding';
 
 export interface Argon2idParams {
   paramsVersion: 1;
@@ -83,6 +84,19 @@ export interface VaultPayloadV1 {
   seedHex: string; // cached 64-byte BIP39 seed so unlock skips PBKDF2
 }
 
+export const VAULT_PAYLOAD_PLAINTEXT_MAX_BYTES = 1024 * 1024;
+export const VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES = VAULT_PAYLOAD_PLAINTEXT_MAX_BYTES + 16;
+export const VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES = 32 + 16;
+
+const base64Length = (bytes: number): number => 4 * Math.ceil(bytes / 3);
+const hasDecodedLength = (value: string, predicate: (length: number) => boolean): boolean => {
+  try {
+    return predicate(base64ToBytes(value).length);
+  } catch {
+    return false;
+  }
+};
+
 const argon2idParamsSchema = z
   .object({
     paramsVersion: z.literal(1),
@@ -97,7 +111,24 @@ const argon2idParamsSchema = z
   })
   .strict();
 
-const aeadBoxSchema = z.object({ nonceB64: z.string().min(1), ciphertextB64: z.string().min(1) }).strict();
+const nonceB64Schema = z.string().length(base64Length(24))
+  .refine((value) => hasDecodedLength(value, (length) => length === 24));
+const wrappedDekBoxSchema = z.object({
+  nonceB64: nonceB64Schema,
+  ciphertextB64: z.string().length(base64Length(VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES))
+    .refine((value) => hasDecodedLength(
+      value, (length) => length === VAULT_WRAPPED_DEK_CIPHERTEXT_BYTES,
+    )),
+}).strict();
+const payloadBoxSchema = z.object({
+  nonceB64: nonceB64Schema,
+  ciphertextB64: z.string()
+    .min(base64Length(17))
+    .max(base64Length(VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES))
+    .refine((value) => hasDecodedLength(
+      value, (length) => length > 16 && length <= VAULT_PAYLOAD_CIPHERTEXT_MAX_BYTES,
+    )),
+}).strict();
 
 export const vaultRecordV1Schema = z
   .object({
@@ -106,9 +137,12 @@ export const vaultRecordV1Schema = z
     vaultId: z.string().min(1),
     name: z.string(),
     createdAt: z.number().int().nonnegative(),
-    kdf: argon2idParamsSchema.extend({ saltB64: z.string().min(1) }).strict(),
-    wrappedDek: aeadBoxSchema,
-    payload: aeadBoxSchema,
+    kdf: argon2idParamsSchema.extend({
+      saltB64: z.string().length(base64Length(16))
+        .refine((value) => hasDecodedLength(value, (length) => length === 16)),
+    }).strict(),
+    wrappedDek: wrappedDekBoxSchema,
+    payload: payloadBoxSchema,
   })
   .strict();
 

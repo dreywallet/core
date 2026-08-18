@@ -14,6 +14,16 @@
       "transformation": "Manually reviewed v1.1.4-prod documentation plus the public 2026-07-22 production client procedure names and wallet-facing field paths for native listing, compact listing, purchase, secure purchase, and cancellation. Public client evidence is explicitly non-authoritative; upstream response, compact-stage, and cancellation-lifecycle omissions remain blocked, and no credentials, signatures, private API data, or live transaction responses were used."
     },
     {
+      "id": "omb-wiki-contracts-v1",
+      "marketplace": "omb-wiki",
+      "path": "omb-wiki-contracts.v1.json",
+      "sourceUrl": "https://ordinalmaxibiz.wiki",
+      "accessedAt": "2026-08-16",
+      "upstreamVersion": "omb-wiki-contract-v1",
+      "sha256": "ddec6311f84dcff14747a0c7a02a9ef590b4c43840674881f919a2435c61c488",
+      "transformation": "Synthetic, sanitized mainnet-format examples reproducing the reviewed OMB Wiki single-inscription ORD.NET purchase and Satflow direct or one-preparation-plus-one-purchase contracts. Values, addresses, txids, listing IDs, and inscriptions are disposable fixtures; no credentials, signatures, private API data, signing, or broadcast were used."
+    },
+    {
       "id": "ordnet-contracts-v2",
       "marketplace": "ordnet",
       "path": "ordnet-contracts.v2.json",
