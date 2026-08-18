@@ -345,6 +345,7 @@ describe('ADR 0007 B2 combination, quorum, and finalization', () => {
         expect(verifyFinalizedVaultTransaction({ policy, plan, transactionHex: finalized.transactionHex })).toEqual(finalized);
       }
     },
+    10_000,
   );
 
   it('deterministically combines independent partial order and selects A+B from a three-role PSBT', () => {

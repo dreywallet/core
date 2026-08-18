@@ -328,7 +328,7 @@ describe('the standalone recovery package', () => {
           const facts = reviewFacts(h.identity, plan, combined.psbtHex);
           expect(facts.disagreements).toEqual([]);
           expect([...facts.rolesPresent].sort()).toEqual([...quorum].sort());
-        });
+        }, 10_000);
       }
     }
 

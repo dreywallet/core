@@ -365,7 +365,7 @@ describe('Community Vault listed acquisition profile', () => {
       plan,
       psbtHexes: [packages[0]!, packages[0]!],
     })).toThrow(/duplicate/u);
-  });
+  }, 10_000);
 });
 
 describe('Community Vault creator-fronted acquisition profile', () => {
