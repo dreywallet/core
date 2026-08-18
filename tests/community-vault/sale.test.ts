@@ -2,11 +2,13 @@ import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NETWORK, SigHash, Transaction, p2wpkh } from '@scure/btc-signer';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
-import { bytesToHex, hexToBytes } from '../../src/domain/vault/encoding';
+import { bytesToBase64, bytesToHex, hexToBytes } from '../../src/domain/vault/encoding';
+import { createProviderPsbtPlan } from '../../src/domain/transactions/provider-psbt';
 import {
   approveCommunityVaultSale,
   assertCommunityVaultSalePlan,
   assertCommunityVaultSalePreflight,
+  combineCommunityVaultSalePsbts,
   communityVaultSalePayouts,
   constructCommunityVaultSalePsbt,
   createCommunityVaultSalePlan,
@@ -14,6 +16,7 @@ import {
   validateCommunityVaultSalePsbt,
   verifyFinalizedCommunityVaultSale,
 } from '../../src/domain/community-vault/sale';
+import { reviewCommunityVaultSaleProviderRequest } from '../../src/domain/community-vault/sale-provider';
 import type { CommunityVaultSalePlanV1, CommunityVaultSalePreflightV1 } from '../../src/domain/community-vault/sale-contracts';
 import { deterministicAux, fixturePolicy, fixtureRoot } from './helpers';
 
@@ -39,6 +42,7 @@ function saleFixture(grossOfferSats = '100000') {
   const change = 1_000n;
   const plan = createCommunityVaultSalePlan({
     policy,
+    vaultOutpoint: { txid: 'ee'.repeat(32), vout: 2 },
     offerId: 'aa'.repeat(32),
     buyerId: 'buyer-fixture',
     nonceHex: 'bb'.repeat(32),
@@ -155,6 +159,27 @@ describe('Community Vault exact-funded sale transaction', () => {
     })).toEqual(finalized);
   }, 20_000);
 
+  it('accepts an owner approval that crosses the threshold without bloating the final witness', () => {
+    const fixture = saleFixture();
+    let psbtHex = fundedBuyerPsbt(fixture);
+    const random = deterministicAux();
+    for (let index = 0; index < 6; index += 1) {
+      psbtHex = approveCommunityVaultSale({
+        policy: fixture.policy,
+        plan: fixture.plan,
+        psbtHex,
+        ownerId: `owner-${index}`,
+        signerRoot: fixture.roots[index]!,
+        nowMs: (BigInt(CREATED) + 20_000n).toString(),
+        random,
+      }).psbtHex;
+    }
+    expect(validateCommunityVaultSalePsbt(fixture.policy, fixture.plan, psbtHex).signedUnits).toHaveLength(80);
+    const finalized = finalizeCommunityVaultSalePsbt(fixture.policy, fixture.plan, psbtHex);
+    expect(finalized.signedUnits).toHaveLength(69);
+    expect(finalized.weight).toBeLessThanOrEqual(400_000);
+  }, 20_000);
+
   it('makes the buyer pay fee on top and pays dissenting owners identically', () => {
     const { policy, plan } = saleFixture();
     expect(plan.buyerPaysFee).toBe(true);
@@ -207,4 +232,125 @@ describe('Community Vault exact-funded sale transaction', () => {
       policy, plan, preflight: stale, nowMs: (BigInt(stale.verifiedAtMs) + 120_001n).toString(),
     })).toThrow(/stale/u);
   });
+
+  it('binds a provider approval to one exact owner and the vault input', () => {
+    const fixture = saleFixture();
+    const base = fundedBuyerPsbt(fixture);
+    const context = {
+      version: 1 as const,
+      ownerId: 'owner-0',
+      policy: fixture.policy,
+      plan: fixture.plan,
+      preflight: preflight(fixture.plan),
+    };
+    const review = reviewCommunityVaultSaleProviderRequest({
+      context,
+      psbtHex: base,
+      selectedInputIndexes: [0],
+      nowMs: (BigInt(CREATED) + 20_000n).toString(),
+    });
+    expect(review.units).toEqual(fixture.policy.owners[0]!.units);
+    expect(review.ownerPayoutSats).toBe(fixture.plan.ownerPayouts[0]!.valueSats);
+    expect(review.grossOfferSats).toBe(fixture.plan.grossOfferSats);
+    expect(() => reviewCommunityVaultSaleProviderRequest({
+      context,
+      psbtHex: base,
+      selectedInputIndexes: [1],
+      nowMs: (BigInt(CREATED) + 20_000n).toString(),
+    })).toThrow(/vault input/u);
+
+    const source = {
+      backend: 'https://gateway.example',
+      instanceId: 'gateway-1',
+      classificationRevision: 'sale-rev-1',
+      coreTip: { height: 910_000, hash: 'dd'.repeat(32) },
+      indexTip: { height: 910_000, hash: 'dd'.repeat(32) },
+      feeQuoteTimestamp: null,
+      mempoolState: null,
+    };
+    const providerPlan = createProviderPsbtPlan({
+      psbtBase64: bytesToBase64(hexToBytes(base)),
+      binding: {
+        origin: 'https://omb.wiki',
+        tabId: 1,
+        frameId: 0,
+        documentId: 'sale-document',
+        requestNonce: 'sale-request',
+        providerMethod: 'signPsbt',
+      },
+      network: 'mainnet',
+      vaultId: 'spending-vault',
+      sessionId: 'sale-session',
+      accountId: `acct_mainnet_${'ff'.repeat(32)}`,
+      account: 0,
+      classifications: fixture.plan.spendPlan.inputs.map((item, index) => ({
+        txid: item.txid,
+        vout: item.vout,
+        valueSats: item.valueSats,
+        scriptPubKey: item.scriptPubKeyHex,
+        confirmations: 10,
+        primaryClass: index === 0 ? 'inscribed' as const : 'cardinal_clean' as const,
+        inscriptions: index === 0
+          ? [{ inscriptionId: fixture.plan.inscriptionId, satpoint: `${item.txid}:${item.vout}:0` }]
+          : [],
+        satRanges: null,
+        unsupportedAssetDetected: false,
+        confidence: 'authoritative' as const,
+        classifiedTip: source.coreTip,
+        classificationRevision: source.classificationRevision,
+      })),
+      walletInputs: [],
+      source,
+      broadcast: false,
+      planId: 'sale-provider-plan',
+      now: Number(BigInt(CREATED) + 20_000n),
+      selectedInputIndexes: [0],
+      communityVaultSale: review,
+      protectedSatFlow: [{
+        inputIndex: 0,
+        inputOffset: 0n,
+        outputIndex: 0,
+        outputOffset: 0n,
+        inscriptionId: fixture.plan.inscriptionId,
+      }],
+    });
+    expect(providerPlan.kind).toBe('community_vault_sale');
+    expect(providerPlan.inputs[0]!.ownership).toBe('external');
+    expect(providerPlan.selectedInputIndexes).toEqual([0]);
+  });
+
+  it('combines independent owner packages deterministically and rejects duplicate units', () => {
+    const fixture = saleFixture();
+    const base = fundedBuyerPsbt(fixture);
+    const random = deterministicAux();
+    const packages = fixture.policy.owners.slice(0, 5).map((owner, index) =>
+      approveCommunityVaultSale({
+        policy: fixture.policy,
+        plan: fixture.plan,
+        psbtHex: base,
+        ownerId: owner.ownerId,
+        signerRoot: fixture.roots[index]!,
+        nowMs: (BigInt(CREATED) + 20_000n).toString(),
+        random,
+      }).psbtHex);
+    const forward = combineCommunityVaultSalePsbts({
+      policy: fixture.policy,
+      plan: fixture.plan,
+      psbtHexes: packages,
+    });
+    const reverse = combineCommunityVaultSalePsbts({
+      policy: fixture.policy,
+      plan: fixture.plan,
+      psbtHexes: [...packages].reverse(),
+    });
+    expect(forward.signedUnits).toHaveLength(69);
+    expect(reverse.signedUnits).toEqual(forward.signedUnits);
+    expect(finalizeCommunityVaultSalePsbt(fixture.policy, fixture.plan, forward.psbtHex).signedUnits)
+      .toHaveLength(69);
+    expect(() => combineCommunityVaultSalePsbts({
+      policy: fixture.policy,
+      plan: fixture.plan,
+      psbtHexes: [packages[0]!, packages[0]!],
+    })).toThrow(/duplicate/u);
+  }, 20_000);
 });

@@ -15,6 +15,7 @@ import {
   createCommunityVaultSpendPlan,
   finalizeCommunityVaultPsbt,
   validateCommunityVaultPsbt,
+  combineCommunityVaultPsbts,
   verifyFinalizedCommunityVaultTransaction,
   type CommunityVaultOwnerApprovalResultV1,
   type CommunityVaultPsbtValidation,
@@ -135,9 +136,10 @@ export function createCommunityVaultSalePlan(draft: CommunityVaultSaleDraftV1): 
   }
   draft.buyerInputs.forEach(assertBuyerInput);
   const seen = new Set<string>();
+  const vaultOutpoint = `${draft.vaultOutpoint.txid}:${draft.vaultOutpoint.vout}`;
   for (const input of draft.buyerInputs) {
     const outpoint = `${input.txid}:${input.vout}`;
-    if (seen.has(outpoint) || outpoint === `${draft.policy.currentOutpoint.txid}:${draft.policy.currentOutpoint.vout}`) {
+    if (seen.has(outpoint) || outpoint === vaultOutpoint) {
       throw new Error('Community Vault sale buyer input is duplicated');
     }
     seen.add(outpoint);
@@ -179,8 +181,8 @@ export function createCommunityVaultSalePlan(draft: CommunityVaultSaleDraftV1): 
     }] : []),
   ];
   const inputs = [{
-    txid: draft.policy.currentOutpoint.txid,
-    vout: draft.policy.currentOutpoint.vout,
+    txid: draft.vaultOutpoint.txid,
+    vout: draft.vaultOutpoint.vout,
     valueSats: draft.vaultValueSats,
     scriptPubKeyHex: draft.policy.scriptPubKeyHex,
     sequence: 0xffff_fffd,
@@ -289,8 +291,7 @@ export function assertCommunityVaultSalePlan(policy: CommunityVaultPolicyV1, raw
   });
   const assetOutput = plan.spendPlan.outputs[0];
   const vaultInput = plan.spendPlan.inputs[0];
-  if (!assetOutput || !vaultInput || vaultInput.txid !== policy.currentOutpoint.txid ||
-      vaultInput.vout !== policy.currentOutpoint.vout || vaultInput.scriptPubKeyHex !== policy.scriptPubKeyHex ||
+  if (!assetOutput || !vaultInput || vaultInput.scriptPubKeyHex !== policy.scriptPubKeyHex ||
       assetOutput.valueSats !== vaultInput.valueSats ||
       assetOutput.scriptPubKeyHex !== plan.buyerDestinationScriptPubKeyHex ||
       plan.spendPlan.vaultInputIndex !== 0 || plan.spendPlan.ordinalRoute.inputIndex !== 0 ||
@@ -417,6 +418,30 @@ export function validateCommunityVaultSalePsbt(
   const tx = Transaction.fromPSBT(hexToBytes(psbtHex), { PSBTVersion: 0, lowR: true });
   plan.buyerInputs.forEach((_input, offset) => verifyBuyerInput(tx, plan, offset));
   return validation;
+}
+
+export function combineCommunityVaultSalePsbts(input: {
+  policy: CommunityVaultPolicyV1;
+  plan: CommunityVaultSalePlanV1;
+  psbtHexes: readonly string[];
+}): CommunityVaultPsbtValidation {
+  if (input.psbtHexes.length < 1 || input.psbtHexes.length > 100) {
+    throw new Error('invalid Community Vault sale PSBT combination count');
+  }
+  const seen = new Set<number>();
+  for (const psbtHex of input.psbtHexes) {
+    const validation = validateCommunityVaultSalePsbt(input.policy, input.plan, psbtHex);
+    for (const unit of validation.signedUnits) {
+      if (seen.has(unit)) throw new Error(`duplicate Community Vault sale signature for unit ${unit}`);
+      seen.add(unit);
+    }
+  }
+  const combined = combineCommunityVaultPsbts(
+    input.policy,
+    input.plan.spendPlan,
+    input.psbtHexes,
+  );
+  return validateCommunityVaultSalePsbt(input.policy, input.plan, combined.psbtHex);
 }
 
 export function approveCommunityVaultSale(input: {

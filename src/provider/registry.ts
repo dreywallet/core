@@ -11,6 +11,7 @@ import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
 import { PROVIDER_MAX_PSBT_INPUTS } from '../domain/transactions/provider-psbt-limits';
 import { communityVaultAcquisitionProviderContextSchema } from '../domain/community-vault/acquisition-provider';
+import { communityVaultSaleProviderContextSchema } from '../domain/community-vault/sale-provider';
 
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
@@ -261,20 +262,26 @@ const signPsbtParamsSchema = z
     broadcast: z.boolean().optional(),
     marketplaceContext: marketplaceContextSchema.optional(),
     communityVaultAcquisitionContext: communityVaultAcquisitionProviderContextSchema.optional(),
+    communityVaultSaleContext: communityVaultSaleProviderContextSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.marketplaceContext !== undefined &&
-        value.communityVaultAcquisitionContext !== undefined) {
+    const contexts = [
+      value.marketplaceContext,
+      value.communityVaultAcquisitionContext,
+      value.communityVaultSaleContext,
+    ].filter((candidate) => candidate !== undefined);
+    if (contexts.length > 1) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'marketplace and Community Vault acquisition contexts are mutually exclusive',
+        message: 'marketplace and Community Vault contexts are mutually exclusive',
       });
     }
-    if (value.communityVaultAcquisitionContext !== undefined && value.broadcast === true) {
+    if ((value.communityVaultAcquisitionContext !== undefined ||
+        value.communityVaultSaleContext !== undefined) && value.broadcast === true) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Community Vault acquisition approvals never broadcast',
+        message: 'Community Vault approvals never broadcast from a provider request',
       });
     }
   });

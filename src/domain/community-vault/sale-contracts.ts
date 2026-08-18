@@ -163,6 +163,7 @@ export const communityVaultSalePreflightSchema: z.ZodType<CommunityVaultSalePref
 
 export interface CommunityVaultSaleDraftV1 {
   policy: import('./contracts').CommunityVaultPolicyV1;
+  vaultOutpoint: { txid: string; vout: number };
   offerId: string;
   buyerId: string;
   nonceHex: string;

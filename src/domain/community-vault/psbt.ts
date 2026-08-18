@@ -280,9 +280,8 @@ function assertPlanPolicy(policy: CommunityVaultPolicyV1, plan: CommunityVaultSp
     throw new Error('Community Vault plan policy binding mismatch');
   }
   const input = plan.inputs[plan.vaultInputIndex]!;
-  if (input.txid !== policy.currentOutpoint.txid || input.vout !== policy.currentOutpoint.vout ||
-      input.scriptPubKeyHex !== policy.scriptPubKeyHex) {
-    throw new Error('Community Vault plan does not spend the frozen policy outpoint');
+  if (input.scriptPubKeyHex !== policy.scriptPubKeyHex) {
+    throw new Error('Community Vault plan does not spend the frozen policy script');
   }
 }
 

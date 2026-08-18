@@ -22,6 +22,7 @@ import { templateForResolution } from '../marketplaces/resolver';
 import { verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
 import { assertProviderPsbtItemCounts } from './provider-psbt-limits';
 import type { CommunityVaultAcquisitionProviderReviewV1 } from '../community-vault/acquisition-provider';
+import type { CommunityVaultSaleProviderReviewV1 } from '../community-vault/sale-provider';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -49,7 +50,7 @@ export interface ProviderPsbtPlanV3 {
   accountId: string;
   account: number;
   kind: 'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt' |
-    'community_vault_acquisition';
+    'community_vault_acquisition' | 'community_vault_sale';
   provider: ProviderAuthorityBinding;
   broadcast: boolean;
   requiresAdvanced: boolean;
@@ -83,6 +84,7 @@ export interface ProviderPsbtPlanV3 {
     allowTaprootScriptPath: boolean;
   };
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
+  communityVaultSale?: CommunityVaultSaleProviderReviewV1;
 }
 
 /** Compatibility name for call sites; only version 4 is constructible. */
@@ -325,17 +327,21 @@ export function createProviderPsbtPlan(input: {
   expiresAt?: number;
   selectedInputIndexes?: number[];
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
+  communityVaultSale?: CommunityVaultSaleProviderReviewV1;
   marketplace?: {
     context: MarketplaceContext;
     resolution: MarketplaceResolution;
     selectedInputIndexes?: number[];
   };
 }): ProviderPsbtPlanV3 {
-  if (input.marketplace && input.communityVaultAcquisition) {
-    throw new Error('marketplace and Community Vault acquisition plans are mutually exclusive');
+  const specialContexts = [input.marketplace, input.communityVaultAcquisition, input.communityVaultSale]
+    .filter((candidate) => candidate !== undefined);
+  if (specialContexts.length > 1) {
+    throw new Error('marketplace and Community Vault plans are mutually exclusive');
   }
-  if (input.communityVaultAcquisition && (input.network !== 'mainnet' || input.broadcast)) {
-    throw new Error('Community Vault acquisition signing is mainnet-only and never broadcasts');
+  if ((input.communityVaultAcquisition || input.communityVaultSale) &&
+      (input.network !== 'mainnet' || input.broadcast)) {
+    throw new Error('Community Vault signing is mainnet-only and never broadcasts');
   }
   if (!new RegExp(`^acct_${input.network}_[0-9a-f]{64}$`, 'u').test(input.accountId)) {
     throw new Error('provider public account identity differs from network');
@@ -376,6 +382,11 @@ export function createProviderPsbtPlan(input: {
       JSON.stringify(requestedIndexes ?? []) !==
         JSON.stringify(input.communityVaultAcquisition.selectedInputIndexes)) {
     throw new Error('Community Vault acquisition signer indexes changed');
+  }
+  if (input.communityVaultSale &&
+      JSON.stringify(requestedIndexes ?? []) !==
+        JSON.stringify(input.communityVaultSale.selectedInputIndexes)) {
+    throw new Error('Community Vault sale signer indexes changed');
   }
   if (input.marketplace && (!marketplaceTemplate || !marketplaceRule || input.marketplace.resolution.status !== 'recognized')) {
     throw new Error('marketplace template resolution changed');
@@ -487,8 +498,9 @@ export function createProviderPsbtPlan(input: {
   const selectedInputIndexes = requestedIndexes ?? planInputs
     .map((item, index) => item.ownership === 'wallet' ? index : -1)
     .filter((index) => index >= 0);
+  const communitySaleIndexes = new Set(input.communityVaultSale?.selectedInputIndexes ?? []);
   if (selectedInputIndexes.length === 0 || selectedInputIndexes.some((index) =>
-    !planInputs[index] || planInputs[index]!.ownership !== 'wallet')) {
+    !planInputs[index] || (planInputs[index]!.ownership !== 'wallet' && !communitySaleIndexes.has(index)))) {
     throw new Error('requested input is not owned by the active account');
   }
   // §21.1 generic listing: without a recognized marketplace template, a wallet
@@ -586,6 +598,7 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' :
       input.communityVaultAcquisition ? 'community_vault_acquisition' :
+        input.communityVaultSale ? 'community_vault_sale' :
         input.kind ?? 'provider_psbt',
     source: input.source,
     inputs: planInputs,
@@ -636,10 +649,11 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' as const :
       input.communityVaultAcquisition ? 'community_vault_acquisition' as const :
+        input.communityVaultSale ? 'community_vault_sale' as const :
         input.kind ?? 'provider_psbt',
     provider: input.binding,
     broadcast: input.broadcast,
-    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition
+    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition || input.communityVaultSale
       ? false : input.requiresAdvanced !== false,
     selectedInputIndexes,
     ...(genericCommitment ? { genericListing: {
@@ -667,6 +681,9 @@ export function createProviderPsbtPlan(input: {
     } } : {}),
     ...(input.communityVaultAcquisition ? {
       communityVaultAcquisition: input.communityVaultAcquisition,
+    } : {}),
+    ...(input.communityVaultSale ? {
+      communityVaultSale: input.communityVaultSale,
     } : {}),
   };
   const transactionCommitmentHash = providerTransactionCommitmentHash(withoutHash);
@@ -868,7 +885,7 @@ export function assertProviderPsbtPlan(plan: ProviderPsbtPlanV3): void {
       plan.outputs.some((output) => output.derivation !== undefined &&
         (output.derivation.accountId !== plan.accountId || output.derivation.account !== plan.account)) ||
       !['provider_psbt', 'provider_transfer', 'provider_ordinal_transfer', 'marketplace_psbt',
-        'community_vault_acquisition'].includes(plan.kind) ||
+        'community_vault_acquisition', 'community_vault_sale'].includes(plan.kind) ||
       !Array.isArray(plan.inputs) || !Array.isArray(plan.outputs) ||
       (plan.selectedInputIndexes !== undefined &&
         (!Array.isArray(plan.selectedInputIndexes) || plan.selectedInputIndexes.length === 0)) ||
