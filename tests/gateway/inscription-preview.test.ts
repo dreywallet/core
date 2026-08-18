@@ -107,6 +107,39 @@ describe('M9P signed inscription approval batches', () => {
     if (result.ok) expect(result.value.items[0]?.preview.disposition).toBe('raster');
   });
 
+  it('accepts an AVIF source descriptor while independently verifying inert PNG bytes', async () => {
+    const req = request();
+    const body = responseBody(req);
+    body.items[0]!.metadata.contentType = 'image/avif';
+    const preview = body.items[0]!.preview;
+    if (preview.disposition !== 'raster') throw new Error('raster fixture expected');
+    body.items[0]!.preview = {
+      ...preview,
+      declaredMime: 'image/avif',
+      detectedMime: 'image/avif',
+      detectedFormat: 'avif',
+      policyRevision: 'm9p-preview-v3',
+    };
+    const result = await clientFor(body as unknown as Record<string, unknown>)
+      .fetchInscriptionApprovalBatch(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.items[0]?.preview).toMatchObject({
+        disposition: 'raster',
+        declaredMime: 'image/avif',
+        detectedMime: 'image/avif',
+        detectedFormat: 'avif',
+      });
+    }
+    if (body.items[0]!.preview.disposition !== 'raster') throw new Error('raster fixture expected');
+    body.items[0]!.preview.policyRevision = 'm9p-preview-v2';
+    await expect(clientFor(body as unknown as Record<string, unknown>)
+      .fetchInscriptionApprovalBatch(req)).resolves.toMatchObject({
+      ok: false,
+      reason: 'schema',
+    });
+  });
+
   it('rejects cache substitution even when the hostile response is freshly signed', async () => {
     const req = request();
     const body = responseBody(req);

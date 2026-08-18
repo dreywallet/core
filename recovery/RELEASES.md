@@ -76,6 +76,7 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.9.0` | 25 | `e5825a79f5ca25f27c66de81470b8c0b74735b352f44205ab790535d8a7272c9` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 | 1 | `v0.9.1` | 25 | `14e444df12af8d6f42c405663376ea74eed1c9b55fc59af078842e479158c4ff` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 | 1 | `v0.9.2` | 25 | `837e704469e6a4608f34e7622597358dc07d8a89c4532d069d5e7380412d8527` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
+| 1 | `v0.10.0` | 25 | `568d36a55b2dd01d06d99629cc51027a5399ccb6026978dde6baa503621a50f0` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 
 Every row so far is tool version **1**. Rows through `v0.2.13` share an artifact
 digest because the program itself did not change across them — only what the
@@ -262,6 +263,10 @@ core revision.
 address, while losing every copy can prevent recovery even when two role backups
 survive. The open specification and serialized kit text change, so the source
 digest moves; the standalone recovery program bytes remain identical.
+
+`v0.10.0` adds bounded standard-account discovery and creation policy. The
+standalone Vault recovery program does not import Spending-account discovery,
+so its artifact remains identical while the source digest binds the new tag.
 
 Kits minted before the first row above carry an all-zero digest sentinel, which
 is deliberate: inventing a digest would claim a verifiable provider-independent

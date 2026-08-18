@@ -248,9 +248,9 @@ export type InscriptionPreviewReason = z.infer<typeof inscriptionPreviewReasonSc
 // below so a v2 payload can never smuggle a v3 shape.
 export const INSCRIPTION_PREVIEW_POLICY_REVISIONS = ['m9p-preview-v2', 'm9p-preview-v3'] as const;
 const supportedImageMimeSchema = z.enum([
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'text/html',
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml', 'text/html',
 ]);
-const detectedImageFormatSchema = z.enum(['jpeg', 'png', 'webp', 'gif', 'svg', 'html']);
+const detectedImageFormatSchema = z.enum(['jpeg', 'png', 'webp', 'gif', 'avif', 'svg', 'html']);
 export const INSCRIPTION_PREVIEW_TEXT_EXCERPT_MAX_BYTES = 1024;
 const previewProvenanceFields = {
   requestedInscriptionId: inscriptionIdSchema,
@@ -354,6 +354,7 @@ function addPreviewRevisionIssues(
     descriptor.disposition === 'text' ||
     descriptor.disposition === 'mediaBadge' ||
     descriptor.reason === 'render_pending' ||
+    descriptor.detectedFormat === 'avif' ||
     descriptor.detectedFormat === 'svg' ||
     descriptor.detectedFormat === 'html';
   if (requiresV3 && descriptor.policyRevision !== 'm9p-preview-v3') {
