@@ -73,6 +73,7 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.8.1` | 25 | `5f1ed31524582b9a644626cd3cda7fe3f58daa9ae9472485df6bfbe7331799d5` | `9eba8ce9a9b7d662b96e4808d6d49fdaf8957c988c6f81a99602e1dd4cead271` |
 | 1 | `v0.8.2` | 25 | `f5e10ab5d3900fac7b0aaa01e6702adcfd1ee3565b24a0f541401a3296635723` | `9eba8ce9a9b7d662b96e4808d6d49fdaf8957c988c6f81a99602e1dd4cead271` |
 | 1 | `v0.8.3` | 25 | `ba3a2f4918d5192132ad8a22dd086bfd1bb592846ae7d8b3e1b6b8553bf60726` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
+| 1 | `v0.9.0` | 25 | `e5825a79f5ca25f27c66de81470b8c0b74735b352f44205ab790535d8a7272c9` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 
 Every row so far is tool version **1**. Rows through `v0.2.13` share an artifact
 digest because the program itself did not change across them — only what the
@@ -245,6 +246,10 @@ the same while the source digest moves with the release version.
 `v0.8.3` bounds untrusted recovery inputs and wallet request structures before
 expensive processing. The standalone recovery program changes, so both the
 reviewed source digest and bundled artifact digest move.
+
+`v0.9.0` adds exact-origin OMB Wiki buyer marketplace policy. The standalone
+recovery program does not import marketplace policy, so its artifact remains
+identical while the source digest binds the new tagged core revision.
 
 Kits minted before the first row above carry an all-zero digest sentinel, which
 is deliberate: inventing a digest would claim a verifiable provider-independent

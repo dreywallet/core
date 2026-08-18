@@ -21,13 +21,16 @@ const vectors = JSON.parse(readFileSync(
 )) as { records: { mainnet: { partialInput: { psbtHex: string }; pairing: VaultPairingEnvelopeV1; approval: VaultPsbtApprovalEnvelopeV1 } } };
 
 describe('Vault QR application transport', () => {
-  it('matches the published untagged CBOR byte-string representation for ur:psbt', () => {
+  it('uses the published CBOR body and the device-compatible crypto-psbt transport', () => {
     const psbtHex = vectors.records.mainnet.partialInput.psbtHex;
     const cbor = encodeVaultPsbtCbor(psbtHex);
     expect(bytesToHex(cbor).startsWith('59')).toBe(true);
     expect(decodeVaultPsbtCbor('psbt', cbor)).toBe(psbtHex);
     expect(decodeVaultPsbtCbor('crypto-psbt', cbor)).toBe(psbtHex);
-    expect(vaultPsbtUrEncoder(psbtHex).frames[0]).toMatch(/^ur:psbt\//u);
+    const encoder = vaultPsbtUrEncoder(psbtHex);
+    expect(encoder.type).toBe('crypto-psbt');
+    expect(encoder.frames[0]).toMatch(/^ur:crypto-psbt\//u);
+    expect(encoder.frames.length).toBeGreaterThan(1);
   });
 
   it('uses the reserved proprietary x-* namespace for authenticated context', () => {

@@ -1,12 +1,12 @@
 /**
  * QR application transport for Vault pairing and signing.
  *
- * PSBTs use the current Blockchain Commons registry type `ur:psbt` and its
- * untagged CBOR byte-string body. The deprecated `ur:crypto-psbt` spelling is
- * accepted for interoperability but never emitted. Authenticated Drey context
- * uses the registry-reserved user namespace `ur:x-drey-vault`; it is explicitly
- * proprietary and supplements, rather than replaces, the separately scanned
- * standards-valid PSBT.
+ * PSBTs use the Blockchain Commons untagged CBOR byte-string body. The current
+ * registry calls it `ur:psbt`, while the supported Jade and SeedSigner releases
+ * still require `ur:crypto-psbt`. We emit the interoperable spelling and accept
+ * both. Authenticated Drey context uses the registry-reserved user namespace
+ * `ur:x-drey-vault`; it is explicitly proprietary and supplements, rather than
+ * replaces, the separately scanned standards-valid PSBT.
  */
 import { Transaction } from '@scure/btc-signer';
 import { decodeCborBytes, encodeCborBytes } from '../ur/cbor-bytes';
@@ -30,6 +30,7 @@ export const DREY_VAULT_CONTEXT_UR_TYPE = 'x-drey-vault' as const;
 
 const PAIRING_CONTEXT = 1;
 const APPROVAL_CONTEXT = 2;
+const DEVICE_PSBT_MAX_FRAGMENT_LENGTH = 60;
 
 function assertPsbt(bytes: Uint8Array): void {
   if (bytes.length < 5 || bytes[0] !== 0x70 || bytes[1] !== 0x73 || bytes[2] !== 0x62 ||
@@ -52,7 +53,7 @@ export function encodeVaultPsbtCbor(psbtHex: string): Uint8Array {
 export function decodeVaultPsbtCbor(type: string, cborMessage: Uint8Array): string {
   const normalized = type.toLowerCase();
   if (normalized !== VAULT_PSBT_UR_TYPE && normalized !== VAULT_LEGACY_PSBT_UR_TYPE) {
-    throw new UrTransportError('invalid-type', 'expected ur:psbt');
+    throw new UrTransportError('invalid-type', 'expected ur:psbt or ur:crypto-psbt');
   }
   const psbt = decodeCborBytes(cborMessage);
   assertPsbt(psbt);
@@ -63,7 +64,11 @@ export function vaultPsbtUrEncoder(
   psbtHex: string,
   options: FixedRateUrEncoderOptions = {},
 ): FixedRateUrEncoder {
-  return new FixedRateUrEncoder(VAULT_PSBT_UR_TYPE, encodeVaultPsbtCbor(psbtHex), options);
+  return new FixedRateUrEncoder(
+    VAULT_LEGACY_PSBT_UR_TYPE,
+    encodeVaultPsbtCbor(psbtHex),
+    { maxFragmentLength: DEVICE_PSBT_MAX_FRAGMENT_LENGTH, ...options },
+  );
 }
 
 function encodeContext(kind: number, payload: Uint8Array): Uint8Array {
