@@ -11,13 +11,16 @@ import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
 import { PROVIDER_MAX_PSBT_INPUTS } from '../domain/transactions/provider-psbt-limits';
 import { communityVaultAcquisitionProviderContextSchema } from '../domain/community-vault/acquisition-provider';
-import { communityVaultSaleProviderContextSchema } from '../domain/community-vault/sale-provider';
+import {
+  communityVaultSaleBuyerProviderContextSchema,
+  communityVaultSaleProviderContextSchema,
+} from '../domain/community-vault/sale-provider';
 
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
 export const PROVIDER_MAX_SIGN_INPUTS = PROVIDER_MAX_PSBT_INPUTS;
 
-export const providerCapabilitySchema = z.enum(['community-vault-v1']);
+export const providerCapabilitySchema = z.enum(['community-vault-v1', 'community-vault-offers-v1']);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 
 export const providerNetworkSchema = z.enum(['Mainnet', 'Signet']);
@@ -266,6 +269,7 @@ const signPsbtParamsSchema = z
     marketplaceContext: marketplaceContextSchema.optional(),
     communityVaultAcquisitionContext: communityVaultAcquisitionProviderContextSchema.optional(),
     communityVaultSaleContext: communityVaultSaleProviderContextSchema.optional(),
+    communityVaultSaleBuyerContext: communityVaultSaleBuyerProviderContextSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -273,6 +277,7 @@ const signPsbtParamsSchema = z
       value.marketplaceContext,
       value.communityVaultAcquisitionContext,
       value.communityVaultSaleContext,
+      value.communityVaultSaleBuyerContext,
     ].filter((candidate) => candidate !== undefined);
     if (contexts.length > 1) {
       context.addIssue({
@@ -281,7 +286,8 @@ const signPsbtParamsSchema = z
       });
     }
     if ((value.communityVaultAcquisitionContext !== undefined ||
-        value.communityVaultSaleContext !== undefined) && value.broadcast === true) {
+        value.communityVaultSaleContext !== undefined ||
+        value.communityVaultSaleBuyerContext !== undefined) && value.broadcast === true) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Community Vault approvals never broadcast from a provider request',

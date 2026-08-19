@@ -68,6 +68,10 @@ describe('provider operation registry', () => {
     };
     expect(getInfo.safeParse(base).success).toBe(true);
     expect(getInfo.safeParse({ ...base, capabilities: ['community-vault-v1'] }).success).toBe(true);
+    expect(getInfo.safeParse({
+      ...base,
+      capabilities: ['community-vault-v1', 'community-vault-offers-v1'],
+    }).success).toBe(true);
     expect(getInfo.safeParse({ ...base, capabilities: ['unknown-capability'] }).success).toBe(false);
   });
 

@@ -22,7 +22,10 @@ import { templateForResolution } from '../marketplaces/resolver';
 import { verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
 import { assertProviderPsbtItemCounts } from './provider-psbt-limits';
 import type { CommunityVaultAcquisitionProviderReviewV1 } from '../community-vault/acquisition-provider';
-import type { CommunityVaultSaleProviderReviewV1 } from '../community-vault/sale-provider';
+import type {
+  CommunityVaultSaleBuyerProviderReviewV1,
+  CommunityVaultSaleProviderReviewV1,
+} from '../community-vault/sale-provider';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -85,6 +88,7 @@ export interface ProviderPsbtPlanV3 {
   };
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
+  communityVaultSaleBuyer?: CommunityVaultSaleBuyerProviderReviewV1;
 }
 
 /** Compatibility name for call sites; only version 4 is constructible. */
@@ -328,18 +332,24 @@ export function createProviderPsbtPlan(input: {
   selectedInputIndexes?: number[];
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
+  communityVaultSaleBuyer?: CommunityVaultSaleBuyerProviderReviewV1;
   marketplace?: {
     context: MarketplaceContext;
     resolution: MarketplaceResolution;
     selectedInputIndexes?: number[];
   };
 }): ProviderPsbtPlanV3 {
-  const specialContexts = [input.marketplace, input.communityVaultAcquisition, input.communityVaultSale]
+  const specialContexts = [
+    input.marketplace,
+    input.communityVaultAcquisition,
+    input.communityVaultSale,
+    input.communityVaultSaleBuyer,
+  ]
     .filter((candidate) => candidate !== undefined);
   if (specialContexts.length > 1) {
     throw new Error('marketplace and Community Vault plans are mutually exclusive');
   }
-  if ((input.communityVaultAcquisition || input.communityVaultSale) &&
+  if ((input.communityVaultAcquisition || input.communityVaultSale || input.communityVaultSaleBuyer) &&
       (input.network !== 'mainnet' || input.broadcast)) {
     throw new Error('Community Vault signing is mainnet-only and never broadcasts');
   }
@@ -387,6 +397,11 @@ export function createProviderPsbtPlan(input: {
       JSON.stringify(requestedIndexes ?? []) !==
         JSON.stringify(input.communityVaultSale.selectedInputIndexes)) {
     throw new Error('Community Vault sale signer indexes changed');
+  }
+  if (input.communityVaultSaleBuyer &&
+      JSON.stringify(requestedIndexes ?? []) !==
+        JSON.stringify(input.communityVaultSaleBuyer.selectedInputIndexes)) {
+    throw new Error('Community Vault buyer signer indexes changed');
   }
   if (input.marketplace && (!marketplaceTemplate || !marketplaceRule || input.marketplace.resolution.status !== 'recognized')) {
     throw new Error('marketplace template resolution changed');
@@ -598,7 +613,7 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' :
       input.communityVaultAcquisition ? 'community_vault_acquisition' :
-        input.communityVaultSale ? 'community_vault_sale' :
+        input.communityVaultSale || input.communityVaultSaleBuyer ? 'community_vault_sale' :
         input.kind ?? 'provider_psbt',
     source: input.source,
     inputs: planInputs,
@@ -649,11 +664,12 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' as const :
       input.communityVaultAcquisition ? 'community_vault_acquisition' as const :
-        input.communityVaultSale ? 'community_vault_sale' as const :
+        input.communityVaultSale || input.communityVaultSaleBuyer ? 'community_vault_sale' as const :
         input.kind ?? 'provider_psbt',
     provider: input.binding,
     broadcast: input.broadcast,
-    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition || input.communityVaultSale
+    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition ||
+      input.communityVaultSale || input.communityVaultSaleBuyer
       ? false : input.requiresAdvanced !== false,
     selectedInputIndexes,
     ...(genericCommitment ? { genericListing: {
@@ -684,6 +700,9 @@ export function createProviderPsbtPlan(input: {
     } : {}),
     ...(input.communityVaultSale ? {
       communityVaultSale: input.communityVaultSale,
+    } : {}),
+    ...(input.communityVaultSaleBuyer ? {
+      communityVaultSaleBuyer: input.communityVaultSaleBuyer,
     } : {}),
   };
   const transactionCommitmentHash = providerTransactionCommitmentHash(withoutHash);

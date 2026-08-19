@@ -16,7 +16,10 @@ import {
   validateCommunityVaultSalePsbt,
   verifyFinalizedCommunityVaultSale,
 } from '../../src/domain/community-vault/sale';
-import { reviewCommunityVaultSaleProviderRequest } from '../../src/domain/community-vault/sale-provider';
+import {
+  reviewCommunityVaultSaleBuyerProviderRequest,
+  reviewCommunityVaultSaleProviderRequest,
+} from '../../src/domain/community-vault/sale-provider';
 import type { CommunityVaultSalePlanV1, CommunityVaultSalePreflightV1 } from '../../src/domain/community-vault/sale-contracts';
 import { deterministicAux, fixturePolicy, fixtureRoot } from './helpers';
 
@@ -104,6 +107,42 @@ function preflight(plan: CommunityVaultSalePlanV1): CommunityVaultSalePreflightV
 }
 
 describe('Community Vault exact-funded sale payouts', () => {
+  it('binds buyer approval to every clean funding input and the exact offer', () => {
+    const fixture = saleFixture();
+    const unsigned = constructCommunityVaultSalePsbt(fixture.policy, fixture.plan);
+    const context = {
+      version: 1 as const,
+      policy: fixture.policy,
+      plan: fixture.plan,
+      preflight: preflight(fixture.plan),
+    };
+    const review = reviewCommunityVaultSaleBuyerProviderRequest({
+      context,
+      psbtHex: unsigned,
+      selectedInputIndexes: [1],
+      nowMs: (BigInt(CREATED) + 20_000n).toString(),
+    });
+    expect(review).toMatchObject({
+      buyerId: fixture.plan.buyerId,
+      selectedInputIndexes: [1],
+      grossOfferSats: fixture.plan.grossOfferSats,
+      buyerTotalSats: fixture.plan.buyerTotalSats,
+      settlementFeeSats: fixture.plan.settlementFeeSats,
+    });
+    expect(() => reviewCommunityVaultSaleBuyerProviderRequest({
+      context,
+      psbtHex: unsigned,
+      selectedInputIndexes: [0],
+      nowMs: (BigInt(CREATED) + 20_000n).toString(),
+    })).toThrow(/buyer signing inputs/u);
+    expect(() => reviewCommunityVaultSaleBuyerProviderRequest({
+      context,
+      psbtHex: fundedBuyerPsbt(fixture),
+      selectedInputIndexes: [1],
+      nowMs: (BigInt(CREATED) + 20_000n).toString(),
+    })).toThrow(/already authorized/u);
+  });
+
   it('sums exactly and applies fractional remainder before cap-table order', () => {
     const { policy } = fixturePolicy();
     const payouts = communityVaultSalePayouts(policy, '100003');
