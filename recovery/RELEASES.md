@@ -83,6 +83,7 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.14.0` | 25 | `ce12e03ad8e52906745bec84b0780f46c181182e6e834d28e05cae66c263a56c` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.14.1` | 25 | `6009f0aaef329d2584c5c1e460adfa2ee3d8d8312730b8f82ea4b3c0e606c6f1` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.14.2` | 25 | `e35c3f508361af4f5ab64f959495e8aba7d2336b15e69b554b9d6ca12c0a0f65` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
+| 1 | `v0.14.3` | 25 | `2983f204dea066f1a37f82265b5ac7d7bdeabcded94dc4665a6de6bd8a4359a3` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 
 Every row so far is tool version **1**. Rows through `v0.2.13` share an artifact
 digest because the program itself did not change across them — only what the

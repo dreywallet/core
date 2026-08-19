@@ -11,6 +11,7 @@ describe('provider operation registry', () => {
     expect([...PROVIDER_METHODS].sort()).toEqual(
       [
         'getInfo',
+        'drey_openCommunityVault',
         'wallet_connect',
         'wallet_disconnect',
         'wallet_renouncePermissions',
@@ -55,6 +56,32 @@ describe('provider operation registry', () => {
       requiresUnlock: true,
       requiresFreshApproval: true,
     });
+  });
+
+  it('advertises optional provider capabilities without using the product version as a protocol gate', () => {
+    const getInfo = PROVIDER_OPERATIONS.getInfo.response;
+    const base = {
+      version: '0.11.2',
+      platform: 'web',
+      methods: ['getInfo', 'signPsbt'],
+      supports: ['WBIP001', 'WBIP004'],
+    };
+    expect(getInfo.safeParse(base).success).toBe(true);
+    expect(getInfo.safeParse({ ...base, capabilities: ['community-vault-v1'] }).success).toBe(true);
+    expect(getInfo.safeParse({ ...base, capabilities: ['unknown-capability'] }).success).toBe(false);
+  });
+
+  it('bounds the Community Vault setup handoff to public identifiers', () => {
+    const setup = PROVIDER_OPERATIONS.drey_openCommunityVault;
+    expect(setup).toMatchObject({
+      requiresConnection: true,
+      requiresUnlock: false,
+      requiresFreshApproval: false,
+      dataCategories: [],
+    });
+    expect(setup.request.safeParse({ campaignId: 'cp_123', ownerId: 'owner_123' }).success).toBe(true);
+    expect(setup.request.safeParse({ campaignId: '../bad', ownerId: 'owner_123' }).success).toBe(false);
+    expect(setup.request.safeParse({ campaignId: 'cp_123', ownerId: 'owner_123', secret: 'no' }).success).toBe(false);
   });
 
   it('accepts only BIP322 messages and keeps PSBT broadcast inside the approved signPsbt method', () => {

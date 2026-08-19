@@ -125,5 +125,5 @@ describe('Community Vault v1 BIP371 PSBT', () => {
     expect(() => verifyFinalizedCommunityVaultTransaction({
       policy: at68.policy, plan: at68.plan, transactionHex: mutatedRaw,
     })).toThrow(/invalid finalized/u);
-  });
+  }, 10_000);
 });

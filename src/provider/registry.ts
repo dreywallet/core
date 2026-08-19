@@ -17,6 +17,9 @@ export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
 export const PROVIDER_MAX_SIGN_INPUTS = PROVIDER_MAX_PSBT_INPUTS;
 
+export const providerCapabilitySchema = z.enum(['community-vault-v1']);
+export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
+
 export const providerNetworkSchema = z.enum(['Mainnet', 'Signet']);
 export type ProviderNetwork = z.infer<typeof providerNetworkSchema>;
 
@@ -337,6 +340,17 @@ const getInfoResultSchema = z
     platform: z.enum(['web', 'mobile']),
     methods: z.array(z.string().min(1).max(128)),
     supports: z.tuple([z.literal('WBIP001'), z.literal('WBIP004')]),
+    // Optional preserves compatibility with earlier provider builds while
+    // allowing sites to gate non-standard workflows on explicit support.
+    capabilities: z.array(providerCapabilitySchema).max(32).optional(),
+  })
+  .strict();
+
+const communityVaultSetupParamsSchema = z
+  .object({
+    campaignId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u),
+    ownerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u),
+    label: z.string().max(80).optional(),
   })
   .strict();
 
@@ -370,6 +384,12 @@ const SIGN_OR_SEND = {
 export const PROVIDER_OPERATIONS = {
   getInfo: op(emptyParamsSchema, getInfoResultSchema, {
     requiresConnection: false,
+    requiresUnlock: false,
+    requiresFreshApproval: false,
+    dataCategories: [],
+  }),
+  drey_openCommunityVault: op(communityVaultSetupParamsSchema, z.null(), {
+    requiresConnection: true,
     requiresUnlock: false,
     requiresFreshApproval: false,
     dataCategories: [],
