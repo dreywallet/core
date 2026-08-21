@@ -15,12 +15,20 @@ import {
   communityVaultSaleBuyerProviderContextSchema,
   communityVaultSaleProviderContextSchema,
 } from '../domain/community-vault/sale-provider';
+import {
+  communityVaultPositionTransferBuyerProviderContextSchema,
+  communityVaultPositionTransferOwnerProviderContextSchema,
+} from '../domain/community-vault/position-transfer-provider';
 
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
 export const PROVIDER_MAX_SIGN_INPUTS = PROVIDER_MAX_PSBT_INPUTS;
 
-export const providerCapabilitySchema = z.enum(['community-vault-v1', 'community-vault-offers-v1']);
+export const providerCapabilitySchema = z.enum([
+  'community-vault-v1',
+  'community-vault-offers-v1',
+  'community-vault-position-transfer-v1',
+]);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 
 export const providerNetworkSchema = z.enum(['Mainnet', 'Signet']);
@@ -270,6 +278,10 @@ const signPsbtParamsSchema = z
     communityVaultAcquisitionContext: communityVaultAcquisitionProviderContextSchema.optional(),
     communityVaultSaleContext: communityVaultSaleProviderContextSchema.optional(),
     communityVaultSaleBuyerContext: communityVaultSaleBuyerProviderContextSchema.optional(),
+    communityVaultPositionTransferOwnerContext:
+      communityVaultPositionTransferOwnerProviderContextSchema.optional(),
+    communityVaultPositionTransferBuyerContext:
+      communityVaultPositionTransferBuyerProviderContextSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -278,6 +290,8 @@ const signPsbtParamsSchema = z
       value.communityVaultAcquisitionContext,
       value.communityVaultSaleContext,
       value.communityVaultSaleBuyerContext,
+      value.communityVaultPositionTransferOwnerContext,
+      value.communityVaultPositionTransferBuyerContext,
     ].filter((candidate) => candidate !== undefined);
     if (contexts.length > 1) {
       context.addIssue({
@@ -287,7 +301,9 @@ const signPsbtParamsSchema = z
     }
     if ((value.communityVaultAcquisitionContext !== undefined ||
         value.communityVaultSaleContext !== undefined ||
-        value.communityVaultSaleBuyerContext !== undefined) && value.broadcast === true) {
+        value.communityVaultSaleBuyerContext !== undefined ||
+        value.communityVaultPositionTransferOwnerContext !== undefined ||
+        value.communityVaultPositionTransferBuyerContext !== undefined) && value.broadcast === true) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Community Vault approvals never broadcast from a provider request',

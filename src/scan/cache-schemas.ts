@@ -74,7 +74,7 @@ const storedUtxoShape = {
 /** Current writes always carry stable identity. */
 export const storedUtxoSchema = z.object({
   ...storedUtxoShape,
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
 }).strict();
 /** Read-only pre-v0.4 cache row; migrate before it can enter selection/planning. */
 export const legacyStoredUtxoSchema = z.object(storedUtxoShape).strict();
@@ -129,7 +129,7 @@ export const scanUnitSchema = z
   .object({
     source: z.enum(['standard', 'descriptor', 'xverse']),
     account: z.number().int().nonnegative(),
-    accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u).optional(),
+    accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u).optional(),
     lane: z.enum(['payment', 'ordinals']),
     legacyEntryId: z.string().min(1).optional(),
   })
@@ -162,8 +162,8 @@ const standardAccountsSchema = z
   });
 
 export const registeredPublicAccountSchema = z.object({
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
-  network: z.enum(['mainnet', 'signet']),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   source: z.enum(['standard', 'descriptor']),
   account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
   name: z.string().min(1).max(80),
@@ -239,7 +239,7 @@ export const scanCheckpointSchema = z
 export type ScanCheckpoint = z.infer<typeof scanCheckpointSchema>;
 
 export const recoveredAddressCountSchema = z.object({
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
   account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
   payment: z.number().int().nonnegative(),
   ordinals: z.number().int().nonnegative(),
@@ -367,11 +367,11 @@ export const accountsMetaSchema = z
     /** Stable registry survives empty scans; definitions are encrypted separately. */
     registeredPublicAccounts: registeredPublicAccountsSchema.default([]),
     activePublicAccountId: z.string()
-      .regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u)
+      .regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u)
       .nullable()
       .default(null),
     hiddenPublicAccountIds: z.array(
-      z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
+      z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
     ).default([]),
     /** Reversible presentation-only suppression; accounts remain scanned. */
     hiddenStandardAccounts: z
@@ -544,7 +544,7 @@ const broadcastRecoveryBaseSchema = z
     transactionHex: z.string().regex(/^(?:[0-9a-f]{2})+$/),
     txid: hexIdSchema,
     wtxid: hexIdSchema,
-    network: z.enum(['mainnet', 'signet']),
+    network: z.enum(['mainnet', 'signet', 'regtest']),
     backend: z.string().min(1),
     attempts: z.number().int().nonnegative(),
     nextRetryAt: z.number().int().nonnegative(),

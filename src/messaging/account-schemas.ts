@@ -6,7 +6,7 @@ import {
 import { accountSigningSourceSchema } from '../domain/accounts/signing-source';
 
 export const publicAccountDescriptorImportShape = {
-  network: z.enum(['mainnet', 'signet']),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   paymentReceiveDescriptor: z.string().min(1).max(512),
   paymentChangeDescriptor: z.string().min(1).max(512),
   ordinalsReceiveDescriptor: z.string().min(1).max(512),
@@ -34,7 +34,7 @@ export const publicAccountDefinitionRecordSchema = z.object({
 /** Separately encrypted signer binding; `none` is an explicit watch-only account. */
 export const accountSigningBindingSchema = z.object({
   version: z.literal(1),
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
   signingSource: accountSigningSourceSchema,
 }).strict();
 

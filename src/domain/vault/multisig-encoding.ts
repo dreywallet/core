@@ -182,8 +182,8 @@ class Reader {
   done(): void { if (this.offset !== this.input.length) throw new Error('trailing vault contract bytes'); }
 }
 
-const NETWORK_TO_BYTE: Record<Network, number> = { mainnet: 0, signet: 1 };
-const BYTE_TO_NETWORK = ['mainnet', 'signet'] as const;
+const NETWORK_TO_BYTE: Record<Network, number> = { mainnet: 0, signet: 1, regtest: 2 };
+const BYTE_TO_NETWORK = ['mainnet', 'signet', 'regtest'] as const;
 const ROLE_TO_BYTE: Record<VaultSignerRole, number> = { 'desktop-a': 0, 'mobile-b': 1, 'recovery-c': 2 };
 const BRANCH_TO_BYTE: Record<VaultBranch, number> = { receive: 0, change: 1 };
 

@@ -1,18 +1,22 @@
 /**
  * BIP84/BIP86 account and address derivation (spec §8.1).
  *
- * Mainnet coin type 0, signet coin type 1. Signet shares testnet address
- * encoding (bech32 hrp "tb"), so @scure/btc-signer's TEST_NETWORK is correct
- * for signet addresses.
+ * Mainnet coin type 0; signet and regtest use test coin type 1. Regtest shares
+ * the test-network key versions but has its own bech32 hrp ("bcrt").
  */
 import { HDKey } from '@scure/bip32';
 import { NETWORK, TEST_NETWORK, p2tr, p2wpkh } from '@scure/btc-signer';
 
-export type Network = 'mainnet' | 'signet';
+export type Network = 'mainnet' | 'signet' | 'regtest';
 export type AddressKind = 'payment' | 'ordinals';
 
 const PURPOSE: Record<AddressKind, number> = { payment: 84, ordinals: 86 };
-const COIN_TYPE: Record<Network, number> = { mainnet: 0, signet: 1 };
+const COIN_TYPE: Record<Network, number> = { mainnet: 0, signet: 1, regtest: 1 };
+export const REGTEST_NETWORK = { ...TEST_NETWORK, bech32: 'bcrt' };
+
+export function bitcoinNetwork(network: Network): typeof NETWORK {
+  return network === 'mainnet' ? NETWORK : network === 'signet' ? TEST_NETWORK : REGTEST_NETWORK;
+}
 
 /** Largest non-hardened BIP32 child/account index. */
 export const BIP32_MAX_INDEX = 0x7fffffff;
@@ -67,7 +71,7 @@ export function deriveAddress(
   const key = node.deriveChild(chain).deriveChild(index);
   const publicKey = key.publicKey;
   if (!publicKey) throw new Error('derived node has no public key');
-  const net = network === 'mainnet' ? NETWORK : TEST_NETWORK;
+  const net = bitcoinNetwork(network);
   const address =
     kind === 'payment'
       ? p2wpkh(publicKey, net).address

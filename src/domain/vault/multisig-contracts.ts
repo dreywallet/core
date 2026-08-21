@@ -365,7 +365,7 @@ const decimalU64 = decimalU64Schema;
 const u32 = z.number().int().min(0).max(0xffff_ffff);
 const shortText = z.string().max(256);
 const longText = z.string().min(1).max(4096);
-const networkSchema = z.enum(['mainnet', 'signet']);
+const networkSchema = z.enum(['mainnet', 'signet', 'regtest']);
 const roleSchema = z.enum(VAULT_ROLES);
 const branchSchema = z.enum(['receive', 'change']);
 

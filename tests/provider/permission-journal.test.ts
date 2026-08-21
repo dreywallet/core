@@ -17,6 +17,7 @@ import {
 } from '../../src/domain/provider/permission-journal';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
 import { getSodium } from '../helpers/sodium';
+import { base64ToBytes, bytesToBase64 } from '../../src/domain/vault/encoding';
 
 class CrashableArea implements PermissionStorageArea {
   readonly values = new Map<string, unknown>();
@@ -380,7 +381,9 @@ describe('encrypted crash-safe permission journal', () => {
     const record = structuredClone(area.values.get(STORAGE_KEY)) as {
       entries: Array<{ ciphertextB64: string }>;
     };
-    record.entries[0]!.ciphertextB64 = `${record.entries[0]!.ciphertextB64.slice(0, -2)}AA`;
+    const ciphertext = base64ToBytes(record.entries[0]!.ciphertextB64);
+    ciphertext[0] = (ciphertext[0] ?? 0) ^ 0x01;
+    record.entries[0]!.ciphertextB64 = bytesToBase64(ciphertext);
     area.values.set(STORAGE_KEY, record);
     expect(await loadPermissionJournal(area, STORAGE_KEY, dek, VAULT_ID)).toMatchObject({
       status: 'corrupt',

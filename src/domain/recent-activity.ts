@@ -446,11 +446,17 @@ export function projectRecentActivity(
   const scanned = history.map((entry): RecentActivity => {
     const transaction = transactionByTxid.get(entry.txid);
     const metadata = transaction ? actionMetadata(transaction) : {};
+    // An accepted wallet-authored replacement is stronger than an older
+    // cached mempool row for its parent. Preserve confirmed chain truth, but
+    // never show the parent as still pending beside its confirmed replacement.
+    const confirmationState = entry.confirmationState === 'mempool' && replacedTxids.has(entry.txid)
+      ? 'replaced' as const
+      : entry.confirmationState;
     return {
       txid: entry.txid,
       deltaSats: entry.deltaSats,
       feeSats: entry.feeSats,
-      confirmationState: entry.confirmationState,
+      confirmationState,
       timestamp: entry.timestamp,
       height: entry.height,
       ...metadata,

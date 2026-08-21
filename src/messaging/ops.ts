@@ -67,7 +67,7 @@ const TRUSTED_SENDERS: readonly SenderContext[] = [
 const emptyRequest = z.object({}).strict();
 
 const operationId = z.string().uuid();
-const publicAccountId = z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u);
+const publicAccountId = z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u);
 
 const vaultCreateRequest = z
   .object({ name: z.string().min(1), password: z.string().min(1), operationId })
@@ -408,7 +408,7 @@ const accountVisibilityResult = z.object({
 }).strict();
 const connectedSitesResult = z.object({ sites: z.array(z.object({
   resourceId: z.string().regex(/^[0-9a-f]{32}$/),
-  origin: z.string().url(), network: z.enum(['mainnet', 'signet']),
+  origin: z.string().url(), network: z.enum(['mainnet', 'signet', 'regtest']),
   accountId: publicAccountId, account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
   categories: z.array(z.enum(['account_identity', 'addresses', 'balance', 'inscriptions', 'network'])),
 }).strict()) }).strict();
@@ -428,7 +428,7 @@ const receiveAddressResult = z
     address: z.string().min(1),
     path: z.string().min(1),
     kind: z.enum(['payment', 'ordinals']),
-    network: z.enum(['mainnet', 'signet']),
+    network: z.enum(['mainnet', 'signet', 'regtest']),
   })
   .strict();
 const paymentInstructionResolveResult = z.object({
@@ -505,7 +505,7 @@ const scanIdResult = z.object({ scanId: z.string().min(1) }).strict();
 const scanUnitView = z
   .object({
     source: z.enum(['standard', 'descriptor', 'xverse']),
-    accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u).nullable(),
+    accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u).nullable(),
     account: z.number().int().nonnegative(),
     lane: z.enum(['payment', 'ordinals']),
   })

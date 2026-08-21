@@ -14,7 +14,8 @@
  */
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { HDKey } from '@scure/bip32';
-import { NETWORK, SigHash, TEST_NETWORK, Transaction } from '@scure/btc-signer';
+import { SigHash, Transaction } from '@scure/btc-signer';
+import { bitcoinNetwork } from '../keys/derivation';
 import { getCryptoProvider } from './crypto-provider';
 import { bytesToHex, hexToBytes } from './encoding';
 import {
@@ -235,7 +236,7 @@ function assertPlanPolicyAndTransaction(policy: VaultPolicyIdentityV1, plan: Vau
     if (!actual.script || bytesToHex(actual.script) !== output.scriptPubKeyHex || actual.amount !== BigInt(output.valueSats)) {
       throw new Error(`Vault plan output ${index} differs from unsigned bytes`);
     }
-    const address = raw.getOutputAddress(index, plan.network === 'mainnet' ? NETWORK : TEST_NETWORK);
+    const address = raw.getOutputAddress(index, bitcoinNetwork(plan.network));
     if (address !== output.address) throw new Error(`Vault plan output ${index} address mismatch`);
     if (output.purpose === 'vault-change') {
       const derived = deriveVaultOutput(policy, 'change', output.derivationIndex!);

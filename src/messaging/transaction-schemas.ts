@@ -12,7 +12,7 @@ const session = {
   expectedSessionId: z.string().uuid(),
 } as const;
 const outpoint = z.object({ txid: hexId, vout: voutSchema }).strict();
-const publicAccountId = z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u);
+const publicAccountId = z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u);
 const feePolicy = z.union([
   z.object({
     type: z.literal('automatic'),
@@ -256,7 +256,7 @@ export const transactionReviewSchema = z.object({
   kind: z.enum([
     'native_send', 'native_batch_send', 'ordinal_transfer', 'ordinal_batch_transfer', 'ordinal_postage_manage', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
   ]),
-  network: z.enum(['mainnet', 'signet']), accountId: publicAccountId, recipients: z.array(reviewOutput),
+  network: z.enum(['mainnet', 'signet', 'regtest']), accountId: publicAccountId, recipients: z.array(reviewOutput),
   inputs: z.array(z.object({ txid: hexId, vout: voutSchema, valueSats: sats,
     classification: z.string(), path: z.string() }).strict()),
   change: z.array(reviewOutput), amountSats: sats, feeSats: sats, totalSats: sats, vsize: sats,
@@ -332,7 +332,7 @@ export const utxoListResultSchema = z.object({ utxos: z.array(z.object({
 
 export const transactionStatusRequestSchema = z.object({ accountId: publicAccountId, ...session }).strict();
 export const transactionStatusResultSchema = z.object({
-  network: z.enum(['mainnet', 'signet']), accountId: publicAccountId,
+  network: z.enum(['mainnet', 'signet', 'regtest']), accountId: publicAccountId,
   transactions: z.array(z.object({
   planId: z.string(), kind: z.string(), txid: hexId, createdAt: z.number().int().nonnegative(),
   amountSats: sats, feeSats: sats, status: z.string(), detail: z.string().nullable(),

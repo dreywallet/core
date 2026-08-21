@@ -55,7 +55,7 @@ import {
  * When mainnet acquires an inhabitant, prefer making the argument required over
  * changing what this resolves to.
  */
-export const DEFAULT_VAULT_ROLE_NETWORK: Network = 'signet';
+export const DEFAULT_VAULT_ROLE_NETWORK = 'signet' as const satisfies Network;
 
 /**
  * An ADR 0007 §1 independence violation: the candidate role is the Spending
@@ -100,6 +100,15 @@ function accountNode(seed: Uint8Array, network: Network): { root: HDKey; account
  * its zod schema, so a record a signer mints is proven to be wire-canonical
  * before it can ever reach a policy, descriptor, or peer.
  */
+export function deriveVaultRoleOrigin<R extends VaultSignerRole>(
+  seed: Uint8Array,
+  role: R,
+): VaultSignerOriginV1 & { role: R; network: 'signet' };
+export function deriveVaultRoleOrigin<R extends VaultSignerRole, N extends Network>(
+  seed: Uint8Array,
+  role: R,
+  network: N,
+): VaultSignerOriginV1 & { role: R; network: N };
 export function deriveVaultRoleOrigin<R extends VaultSignerRole>(
   seed: Uint8Array,
   role: R,

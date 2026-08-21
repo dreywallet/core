@@ -26,6 +26,7 @@ import {
   verifyFinalizedVaultTransaction,
 } from '../../src/domain/vault/multisig-psbt';
 import { finalizeVaultUnsignedPlan, vaultPsbtHash } from '../../src/domain/vault/multisig-encoding';
+import type { Network } from '../../src/domain/keys/derivation';
 
 interface ContractRecord {
   policy: VaultPolicyIdentityV1;
@@ -120,15 +121,15 @@ function multiInputRecord(): ContractRecord {
 }
 
 const sha256 = (value: string): Uint8Array => new Uint8Array(createHash('sha256').update(value).digest());
-const fixtureSeed = (network: 'mainnet' | 'signet', label: string): Uint8Array =>
+const fixtureSeed = (network: Network, label: string): Uint8Array =>
   sha256(`PUBLIC DISPOSABLE B0 FIXTURE ONLY:${network}:${label}`);
 
-function root(network: 'mainnet' | 'signet', role: VaultSignerRole): HDKey {
+function root(network: Network, role: VaultSignerRole): HDKey {
   const label = role === 'desktop-a' ? 'root-a' : role === 'mobile-b' ? 'root-b' : 'root-c';
   return HDKey.fromMasterSeed(fixtureSeed(network, label), bip32Versions(network));
 }
 
-function foreignRoot(network: 'mainnet' | 'signet'): HDKey {
+function foreignRoot(network: Network): HDKey {
   return HDKey.fromMasterSeed(fixtureSeed(network, 'foreign-root'), bip32Versions(network));
 }
 

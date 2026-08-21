@@ -43,7 +43,7 @@ const categoriesSchema = z
 export const permissionScopeSchema = z
   .object({
     origin: z.string().min(1),
-    network: z.enum(['mainnet', 'signet']),
+    network: z.enum(['mainnet', 'signet', 'regtest']),
     vaultId: z.string().min(1),
     account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX),
     categories: categoriesSchema,
@@ -89,7 +89,7 @@ const revokeScopeEventSchema = z
     eventId: opaqueIdSchema,
     occurredAtMs: z.number().int().nonnegative(),
     origin: z.string().min(1),
-    network: z.enum(['mainnet', 'signet']),
+    network: z.enum(['mainnet', 'signet', 'regtest']),
     vaultId: z.string().min(1),
     account: z.number().int().min(0).max(MAX_ACCOUNT_INDEX).nullable(),
     reason: z.enum(['disconnect', 'user_revoked', 'vault_removed', 'reset']),

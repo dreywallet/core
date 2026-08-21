@@ -78,6 +78,7 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.9.2` | 25 | `837e704469e6a4608f34e7622597358dc07d8a89c4532d069d5e7380412d8527` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 | 1 | `v0.10.0` | 25 | `568d36a55b2dd01d06d99629cc51027a5399ccb6026978dde6baa503621a50f0` | `5a22e477cf6b3cfd63563833df775098cfc009c3b7ca91309c662a0a46f80914` |
 | 1 | `v0.10.1` | 25 | `38956f945cc04a2fce9bb49f94d301ab891dd9b2203142ee6753e81ab5f0b2a7` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
+| 1 | `v0.11.0` | 25 | `0618c19d3e5c1dc1a08858f435a67f2bd44d83e3c36af59caae8da6edac49898` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.12.0` | 22 | `28a67093fb60cc38812f0649c027b437a150cfde662af1945fa3b5fda0219af9` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.13.2` | 25 | `01b1052b765101d50a05554753e78f38ff0b4d6f8569cc0d28a8566a493f43ac` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.14.0` | 25 | `ce12e03ad8e52906745bec84b0780f46c181182e6e834d28e05cae66c263a56c` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
@@ -85,6 +86,8 @@ least one lives somewhere Drey does not control.
 | 1 | `v0.14.2` | 25 | `e35c3f508361af4f5ab64f959495e8aba7d2336b15e69b554b9d6ca12c0a0f65` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.14.3` | 25 | `2983f204dea066f1a37f82265b5ac7d7bdeabcded94dc4665a6de6bd8a4359a3` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
 | 1 | `v0.14.4` | 25 | `d40603d037cdbdcfa434dfaa4bac3c72e0c2c18a952e45db3df3d6120f3ad96e` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
+| 1 | `v0.15.1` | 25 | `33a6226ff34b21a8290e69d7b1ddb6cd0529f7f6c619c416f566f76813b567fd` | `e9b46a159b22b7d1498ecc421cc621f4e0f5b20b76ec94d0272f1b4f2f82faaa` |
+| 1 | `v0.16.0` | 25 | `783f88bbe91af76884db0005d6946c0b06c6c4ee171396781106f621f8c96f43` | `55e2d13c09f7a16ff9db416633079dbc78aad071f7f70a85c1d72a589023d86c` |
 
 Every row so far is tool version **1**. Rows through `v0.2.13` share an artifact
 digest because the program itself did not change across them — only what the
@@ -279,6 +282,20 @@ so its artifact remains identical while the source digest binds the new tag.
 `v0.10.1` accepts AVIF source descriptors for gateway-rendered inert PNG
 previews. The standalone Vault recovery program does not import the gateway
 preview contract; its reproducible artifact is recorded from the release build.
+
+`v0.11.0` limits routine Spending-account refresh planning to the selected
+account. The standalone Vault recovery program has no live refresh path, so its
+artifact remains identical while the source digest binds the new release.
+
+`v0.15.1` adds whole-position Community Vault transfers and their provider
+review envelope. The standalone recovery program imports neither boundary, so
+its artifact remains identical while the source digest binds the tagged core
+revision.
+
+`v0.16.0` adds explicit regtest support to the wallet's platform-free network,
+address, derivation, transaction, gateway, and Vault boundaries. The recovery
+program imports the shared Vault contracts and network-aware signing path, so
+both the reviewed source digest and reproducible artifact digest move.
 
 Kits minted before the first row above carry an all-zero digest sentinel, which
 is deliberate: inventing a digest would claim a verifiable provider-independent

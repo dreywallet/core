@@ -9,12 +9,10 @@
  */
 import {
   Address,
-  NETWORK,
   OutScript,
   RawWitness,
   Script,
   SigHash,
-  TEST_NETWORK,
   Transaction,
   p2tr,
   p2wpkh,
@@ -28,7 +26,7 @@ import {
   sha256x2,
 } from '@scure/btc-signer/utils';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
-import type { AddressKind, Network } from '../keys/derivation';
+import { bitcoinNetwork, type AddressKind, type Network } from '../keys/derivation';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
 
 export const BIP322_SIMPLE_PREFIX = 'smp';
@@ -124,7 +122,7 @@ function makeVirtualTransactions(message: Uint8Array, challenge: Uint8Array): {
 /** Exposes the official vector intermediates without exposing signing data. */
 export function bip322VirtualHashes(message: string, address: string, network: Network): Bip322VirtualHashes {
   const messageBytes = validateBip322Message(message);
-  const codec = Address(network === 'mainnet' ? NETWORK : TEST_NETWORK);
+  const codec = Address(bitcoinNetwork(network));
   const challenge = OutScript.encode(codec.decode(address));
   const virtual = makeVirtualTransactions(messageBytes, challenge);
   return {
@@ -183,7 +181,7 @@ export function verifyBip322Simple(
 ): boolean {
   try {
     const messageBytes = validateBip322Message(message);
-    const codec = Address(network === 'mainnet' ? NETWORK : TEST_NETWORK);
+    const codec = Address(bitcoinNetwork(network));
     const challenge = OutScript.encode(codec.decode(address));
     const decoded = OutScript.decode(challenge);
     const witness = decodeSimpleWitness(signature);

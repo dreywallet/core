@@ -29,6 +29,7 @@ describe('accountPath', () => {
     expect(accountPath('ordinals', 'mainnet', 3)).toBe("m/86'/0'/3'");
     expect(accountPath('payment', 'signet', 1)).toBe("m/84'/1'/1'");
     expect(accountPath('ordinals', 'signet', 0)).toBe("m/86'/1'/0'");
+    expect(accountPath('payment', 'regtest', 0)).toBe("m/84'/1'/0'");
   });
 
   it('rejects negative or fractional account indexes', () => {
@@ -74,6 +75,17 @@ describe('signet derivation', () => {
     expect(stableExternalAddress(seed, 'payment', 'signet', 0)).toEqual(
       stableExternalAddress(seed, 'payment', 'signet', 0),
     );
+  });
+});
+
+describe('regtest derivation', () => {
+  it('uses test coin type 1 with the distinct bcrt address encoding', () => {
+    const payment = stableExternalAddress(seed, 'payment', 'regtest', 0);
+    const ordinals = stableExternalAddress(seed, 'ordinals', 'regtest', 0);
+    expect(payment.address.startsWith('bcrt1q')).toBe(true);
+    expect(ordinals.address.startsWith('bcrt1p')).toBe(true);
+    expect(payment.path).toBe("m/84'/1'/0'/0/0");
+    expect(payment.address).not.toBe(stableExternalAddress(seed, 'payment', 'signet', 0).address);
   });
 });
 

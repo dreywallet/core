@@ -256,7 +256,7 @@ function originFromHdKey(
   const publicKey = asBytes(hd.get(3), 33, 'public key');
   const chainCode = asBytes(hd.get(4), 32, 'chain code');
   const useInfo = hd.get(5);
-  let encodedNetwork: Network = 'mainnet';
+  let encodedMainnet = true;
   if (useInfo !== undefined) {
     const coin = asMap(asTag(useInfo, coinTag, 'coin info'), 'coin info');
     if (coin.get(1) !== undefined && asNumber(coin.get(1), 'coin type') !== 0) {
@@ -264,9 +264,11 @@ function originFromHdKey(
     }
     const network = coin.get(2) === undefined ? 0 : asNumber(coin.get(2), 'coin network');
     if (network !== 0 && network !== 1) fail('wrong-network', 'unsupported Bitcoin network');
-    encodedNetwork = network === 0 ? 'mainnet' : 'signet';
+    encodedMainnet = network === 0;
   }
-  if (encodedNetwork !== expectedNetwork) fail('wrong-network', `This is a ${encodedNetwork} account.`);
+  if (encodedMainnet !== (expectedNetwork === 'mainnet')) {
+    fail('wrong-network', `This is a ${encodedMainnet ? 'mainnet' : 'test-network'} account.`);
+  }
   const originValue = hd.get(6);
   if (originValue === undefined) fail('invalid-format', 'account key origin is missing');
   const keypath = asMap(asTag(originValue, pathTag, 'key origin'), 'key origin');

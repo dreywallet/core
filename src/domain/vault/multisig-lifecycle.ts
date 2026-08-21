@@ -53,7 +53,7 @@ const variableHex = z.string().regex(/^(?:[0-9a-f]{2})+$/u);
 const decimal = z.string().regex(/^(?:0|[1-9][0-9]*)$/u);
 const identity = {
   version: z.literal(1),
-  network: z.enum(['mainnet', 'signet']),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   policyId: hex(32),
   planId: hex(16),
   planDigest: hex(32),

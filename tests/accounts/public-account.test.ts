@@ -10,7 +10,7 @@ import {
   publicAccountsMatch,
 } from '../../src/domain/accounts/public-account';
 import { descriptorChecksum } from '../../src/domain/keys/descriptor-checksum';
-import { accountPath, deriveAccountNode, deriveAddress } from '../../src/domain/keys/derivation';
+import { accountPath, deriveAccountNode, deriveAddress, type Network } from '../../src/domain/keys/derivation';
 import { bip32Versions } from '../../src/domain/keys/extended-key';
 
 const SEED = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
@@ -19,7 +19,7 @@ function withChecksum(payload: string): string {
   return `${payload}#${descriptorChecksum(payload)}`;
 }
 
-function descriptors(network: 'mainnet' | 'signet' = 'signet', accountIndex = 0) {
+function descriptors(network: Network = 'signet', accountIndex = 0) {
   const definition = publicAccountFromSeed(SEED, network, accountIndex);
   return {
     definition,
@@ -34,7 +34,7 @@ function descriptors(network: 'mainnet' | 'signet' = 'signet', accountIndex = 0)
 }
 
 describe('closed public account descriptors', () => {
-  it.each(['mainnet', 'signet'] as const)(
+  it.each(['mainnet', 'signet', 'regtest'] as const)(
     'derives the same %s addresses as the corresponding software account',
     (network) => {
       const { definition, input } = descriptors(network, 7);

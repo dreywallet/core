@@ -389,6 +389,30 @@ describe('recent wallet activity', () => {
     ]);
   });
 
+  it('does not show a stale scanned parent as pending beside its replacement', () => {
+    const originalTxid = 'b'.repeat(64);
+    const replacementTxid = 'c'.repeat(64);
+    const result = mergeRecentActivity([
+      history({ txid: originalTxid, confirmationState: 'mempool' }),
+      history({ txid: replacementTxid, confirmationState: 'confirmed', height: 100 }),
+    ], [
+      transaction({ txid: originalTxid }),
+      transaction({ txid: replacementTxid, status: 'confirmed', replacesTxid: originalTxid }),
+    ]);
+    expect(result.map((entry) => [entry.txid, entry.confirmationState])).toEqual([
+      [originalTxid, 'replaced'],
+      [replacementTxid, 'confirmed'],
+    ]);
+
+    const confirmedParent = mergeRecentActivity([
+      history({ txid: originalTxid, confirmationState: 'confirmed', height: 101 }),
+    ], [
+      transaction({ txid: replacementTxid, replacesTxid: originalTxid }),
+    ]);
+    expect(confirmedParent.find((entry) => entry.txid === originalTxid)?.confirmationState)
+      .toBe('confirmed');
+  });
+
   it('keeps unconfirmed entries ahead of confirmed history and enforces the display limit', () => {
     const confirmed = Array.from({ length: 12 }, (_, index) => history({
       txid: index.toString(16).padStart(64, '0'),

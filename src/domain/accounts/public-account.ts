@@ -8,7 +8,7 @@
  * enter the portable account record.
  */
 import { HDKey } from '@scure/bip32';
-import { NETWORK, TEST_NETWORK, p2tr, p2wpkh } from '@scure/btc-signer';
+import { p2tr, p2wpkh } from '@scure/btc-signer';
 import { sha256 } from '@scure/btc-signer/utils';
 import { z } from 'zod';
 import { descriptorChecksum } from '../keys/descriptor-checksum';
@@ -16,6 +16,7 @@ import { bip32Versions } from '../keys/extended-key';
 import {
   accountPath,
   assertBip32Index,
+  bitcoinNetwork,
   type AddressInfo,
   type AddressKind,
   type Network,
@@ -106,8 +107,8 @@ const laneSchema: z.ZodType<PublicAccountLaneV1> = z.object({
 
 const definitionShape = z.object({
   version: z.literal(1),
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
-  network: z.enum(['mainnet', 'signet']),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   derivationAccountIndex: z.number().int().min(0).max(0x7fff_ffff),
   lanes: z.object({ payment: laneSchema, ordinals: laneSchema }).strict(),
 }).strict();
@@ -157,8 +158,9 @@ export function parsePublicDescriptor(descriptor: string, expectedNetwork: Netwo
   const kind = descriptorKind(fragment!);
   const purpose = Number(purposeText) as 84 | 86;
   if (purpose !== purposeFor(kind)) throw new Error('descriptor purpose does not match script type');
-  const network: Network = coinText === '0' ? 'mainnet' : 'signet';
-  if (network !== expectedNetwork) throw new Error('descriptor network mismatch');
+  const isMainnet = coinText === '0';
+  if (isMainnet !== (expectedNetwork === 'mainnet')) throw new Error('descriptor network mismatch');
+  const network = expectedNetwork;
   const accountIndex = Number(accountText);
   assertBip32Index(accountIndex, 'descriptor account index');
   const chain = Number(chainText) as PublicAccountChain;
@@ -366,7 +368,7 @@ export function derivePublicAccountAddress(
   if (branch.index !== chain || child.index !== index || !child.publicKey) {
     throw new Error('invalid BIP32 public child derivation');
   }
-  const net = definition.network === 'mainnet' ? NETWORK : TEST_NETWORK;
+  const net = bitcoinNetwork(definition.network);
   const payment = lane === 'payment'
     ? p2wpkh(child.publicKey, net)
     : p2tr(child.publicKey.slice(1), undefined, net);

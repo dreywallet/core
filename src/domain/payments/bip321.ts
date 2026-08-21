@@ -263,10 +263,11 @@ export function selectBip321OnchainFallback(
   if (current.ok) return current;
   if (current.reason === 'unsupported_output_type') return current;
 
-  const otherNetwork: Network = network === 'mainnet' ? 'signet' : 'mainnet';
-  const other = resolvePayableAddress(address, otherNetwork);
-  if (other.ok || other.reason === 'unsupported_output_type') {
-    return { ok: false, reason: 'wrong_network' };
+  for (const otherNetwork of (['mainnet', 'signet', 'regtest'] as const).filter((candidate) => candidate !== network)) {
+    const other = resolvePayableAddress(address, otherNetwork);
+    if (other.ok || other.reason === 'unsupported_output_type') {
+      return { ok: false, reason: 'wrong_network' };
+    }
   }
   return { ok: false, reason: 'invalid_address' };
 }

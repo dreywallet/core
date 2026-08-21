@@ -1,4 +1,4 @@
-import { NETWORK, TEST_NETWORK, Transaction } from '@scure/btc-signer';
+import { Transaction } from '@scure/btc-signer';
 import { scriptPubKeyHex } from '../keys/script-hash';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import {
@@ -17,7 +17,7 @@ import type {
   TransactionKind,
   TransactionPlan,
 } from './plan';
-import type { Network } from '../keys/derivation';
+import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 import { isAuthoritativeCardinalClean } from '../gateway/contract';
 
@@ -244,7 +244,7 @@ function rawSighash(tx: Transaction, index: number, kind: ScriptKind): { raw: nu
 
 function outputAddress(tx: Transaction, index: number, network: Network): string | null {
   try {
-    return tx.getOutputAddress(index, network === 'mainnet' ? NETWORK : TEST_NETWORK) ?? null;
+    return tx.getOutputAddress(index, bitcoinNetwork(network)) ?? null;
   } catch {
     return null;
   }

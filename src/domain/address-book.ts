@@ -14,7 +14,7 @@ export const MAX_RECENT_RECIPIENTS = 20;
 export const MAX_RECIPIENT_LABEL_LENGTH = 80;
 
 const recipientIdSchema = z.string().regex(/^[0-9a-f]{32}$/u);
-const networkSchema = z.enum(['mainnet', 'signet']);
+const networkSchema = z.enum(['mainnet', 'signet', 'regtest']);
 const timestampSchema = z.number().int().nonnegative();
 
 export const savedRecipientSchema = z.object({

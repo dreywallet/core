@@ -22,6 +22,7 @@ import {
   type VaultUnsignedPlanV1,
 } from '../../src/domain/vault/multisig-contracts';
 import { mnemonicToSeed, validateMnemonic } from '../../src/domain/keys/mnemonic';
+import type { Network } from '../../src/domain/keys/derivation';
 import {
   combineVaultPartialSignatureResults,
   combineVaultPsbts,
@@ -60,7 +61,7 @@ export function readMnemonic(source: string): string {
  */
 export function withRoleRoot<T>(
   mnemonic: string,
-  network: 'mainnet' | 'signet',
+  network: Network,
   body: (root: HDKey) => T,
 ): T {
   const seed = mnemonicToSeed(mnemonic);

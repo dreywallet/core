@@ -1,8 +1,8 @@
 import { bech32m } from '@scure/base';
-import { Address, NETWORK, OutScript, TEST_NETWORK } from '@scure/btc-signer';
+import { Address, OutScript } from '@scure/btc-signer';
 import type { WalletUtxo } from '../classification/types';
 import type { EligibilityContext } from '../classification/eligibility';
-import type { Network } from '../keys/derivation';
+import { bitcoinNetwork, type Network } from '../keys/derivation';
 import {
   payableScriptKind,
   scriptDustSats,
@@ -45,7 +45,7 @@ export interface NativeSendChangeOutput {
  * deliberately does not support.
  */
 function isUnsupportedWitnessAddress(address: string, network: Network): boolean {
-  const expectedPrefix = network === 'mainnet' ? NETWORK.bech32 : TEST_NETWORK.bech32;
+  const expectedPrefix = bitcoinNetwork(network).bech32;
   try {
     const decoded = bech32m.decode(address as `${string}1${string}`, 90);
     if (decoded.prefix.toLowerCase() !== expectedPrefix || decoded.words.length < 2) return false;
@@ -66,7 +66,7 @@ function isUnsupportedWitnessAddress(address: string, network: Network): boolean
 export function resolvePayableAddress(address: string, network: Network): PayableAddressOutcome {
   let scriptPubKey: string;
   try {
-    const codec = Address(network === 'mainnet' ? NETWORK : TEST_NETWORK);
+    const codec = Address(bitcoinNetwork(network));
     scriptPubKey = bytesToHex(OutScript.encode(codec.decode(address)));
   } catch {
     return {

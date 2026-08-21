@@ -7,9 +7,9 @@
  * fragment, threshold, origin, child path, key family, network, or script type.
  */
 import { HDKey } from '@scure/bip32';
-import { NETWORK, TEST_NETWORK, p2ms, p2wsh } from '@scure/btc-signer';
+import { p2ms, p2wsh } from '@scure/btc-signer';
 import { z } from 'zod';
-import { assertBip32Index, type Network } from '../keys/derivation';
+import { assertBip32Index, bitcoinNetwork, type Network } from '../keys/derivation';
 import { bytesToHex, hexToBytes } from './encoding';
 import {
   VAULT_ROLES,
@@ -85,7 +85,7 @@ const derivedKeySchema: z.ZodType<VaultDerivedKeyV1> = z.object({
 
 export const vaultDerivedOutputSchema: z.ZodType<VaultDerivedOutputV1> = z.object({
   version: z.literal(1),
-  network: z.enum(['mainnet', 'signet']),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   policyId: z.string().regex(HEX_32),
   branch: z.enum(['receive', 'change']),
   index: z.number().int().min(0).max(0x7fff_ffff),
@@ -134,8 +134,15 @@ function descriptorParts(descriptor: string): { payload: string; checksum: strin
   return { payload, checksum };
 }
 
-/** Parse only ADR 0007's canonical, ranged native-P2WSH descriptor grammar. */
-export function parseCanonicalVaultDescriptor(descriptor: string): ParsedVaultDescriptorV1 {
+/**
+ * Parse only ADR 0007's canonical, ranged native-P2WSH descriptor grammar.
+ * Coin type 1 and tpub cannot distinguish signet from regtest, so callers
+ * validating a regtest policy must supply that already-bound network.
+ */
+export function parseCanonicalVaultDescriptor(
+  descriptor: string,
+  expectedNetwork?: Network,
+): ParsedVaultDescriptorV1 {
   if (typeof descriptor !== 'string' || descriptor.length > 2048) throw new Error('invalid Vault descriptor');
   const { payload } = descriptorParts(descriptor);
   if (!payload.startsWith(DESCRIPTOR_PREFIX) || !payload.endsWith(DESCRIPTOR_SUFFIX)) {
@@ -150,14 +157,18 @@ export function parseCanonicalVaultDescriptor(descriptor: string): ParsedVaultDe
     const match = KEY_EXPRESSION.exec(expression);
     if (!match) throw new Error('non-canonical Vault key expression');
     const [, fingerprint, coinType, accountXpub, chain] = match;
-    const expressionNetwork: Network = coinType === '0' ? 'mainnet' : 'signet';
+    const expressionNetwork: Network = coinType === '0' ? 'mainnet' :
+      expectedNetwork === 'regtest' ? 'regtest' : 'signet';
+    if (expectedNetwork !== undefined && (coinType === '0') !== (expectedNetwork === 'mainnet')) {
+      throw new Error('Vault descriptor network mismatch');
+    }
     const expressionBranch: VaultBranch = chain === '0' ? 'receive' : 'change';
     if (network !== undefined && network !== expressionNetwork) throw new Error('mixed Vault descriptor networks');
     if (branch !== undefined && branch !== expressionBranch) throw new Error('mixed Vault descriptor branches');
     network = expressionNetwork;
     branch = expressionBranch;
     if ((expressionNetwork === 'mainnet' && !accountXpub!.startsWith('xpub')) ||
-        (expressionNetwork === 'signet' && !accountXpub!.startsWith('tpub'))) {
+        (expressionNetwork !== 'mainnet' && !accountXpub!.startsWith('tpub'))) {
       throw new Error('network-appropriate account xpub required');
     }
     return vaultSignerOriginSchema.parse({
@@ -226,9 +237,10 @@ export function generateVaultDescriptors(policy: VaultPolicyIdentityV1): VaultDe
 export function parseCanonicalVaultPolicyDescriptors(
   receiveDescriptor: string,
   changeDescriptor: string,
+  expectedNetwork?: Network,
 ): VaultPolicyIdentityV1 {
-  const receive = parseCanonicalVaultDescriptor(receiveDescriptor);
-  const change = parseCanonicalVaultDescriptor(changeDescriptor);
+  const receive = parseCanonicalVaultDescriptor(receiveDescriptor, expectedNetwork);
+  const change = parseCanonicalVaultDescriptor(changeDescriptor, expectedNetwork);
   if (receive.branch !== 'receive' || change.branch !== 'change') {
     throw new Error('receive/change Vault descriptors are swapped or duplicated');
   }
@@ -248,7 +260,7 @@ export function validateVaultPolicyRecordDescriptors(record: VaultPolicyRecordV1
 
 export function assertVaultDescriptorPolicy(policy: VaultPolicyIdentityV1): void {
   assertVaultPolicyIdentity(policy);
-  const parsed = parseCanonicalVaultPolicyDescriptors(policy.receiveDescriptor, policy.changeDescriptor);
+  const parsed = parseCanonicalVaultPolicyDescriptors(policy.receiveDescriptor, policy.changeDescriptor, policy.network);
   if (parsed.policyId !== policy.policyId || parsed.network !== policy.network ||
       parsed.signers.some((signer, index) => !sameOrigin(signer, policy.signers[index]!))) {
     throw new Error('Vault descriptor pair does not round-trip to the B0 policy identity');
@@ -295,7 +307,7 @@ export function deriveVaultOutput(
   const sortedPublicKeys = logicalKeys
     .map((key) => hexToBytes(key.publicKeyHex))
     .sort(compareBytes);
-  const payment = p2wsh(p2ms(2, sortedPublicKeys), policy.network === 'mainnet' ? NETWORK : TEST_NETWORK);
+  const payment = p2wsh(p2ms(2, sortedPublicKeys), bitcoinNetwork(policy.network));
   return vaultDerivedOutputSchema.parse({
     version: 1,
     network: policy.network,

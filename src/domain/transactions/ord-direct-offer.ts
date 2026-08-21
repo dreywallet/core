@@ -1,7 +1,7 @@
-import { NETWORK, TEST_NETWORK, Transaction } from '@scure/btc-signer';
+import { Transaction } from '@scure/btc-signer';
 import { sha256 } from '@scure/btc-signer/utils';
 import { z } from 'zod';
-import type { Network } from '../keys/derivation';
+import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
 import type { PlanInput, PlanOutput } from './plan';
 
@@ -145,7 +145,7 @@ function hexBytes(hex: string): Uint8Array {
 
 function outputAddress(tx: Transaction, index: number, network: Network): string | null {
   try {
-    return tx.getOutputAddress(index, network === 'mainnet' ? NETWORK : TEST_NETWORK) ?? null;
+    return tx.getOutputAddress(index, bitcoinNetwork(network)) ?? null;
   } catch {
     return null;
   }

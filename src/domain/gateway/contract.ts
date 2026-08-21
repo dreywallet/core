@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 
-export const networkSchema = z.enum(['mainnet', 'signet']);
+export const networkSchema = z.enum(['mainnet', 'signet', 'regtest']);
 export type GatewayNetwork = z.infer<typeof networkSchema>;
 
 export const hexIdSchema = z.string().regex(/^[0-9a-f]{64}$/, '32-byte hex id');

@@ -1,7 +1,7 @@
-import { NETWORK, RawTx, SigHash, TEST_NETWORK, Transaction } from '@scure/btc-signer';
+import { RawTx, SigHash, Transaction } from '@scure/btc-signer';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import type { UtxoClassification } from '../gateway/contract';
-import { deriveAccountNode, type Network } from '../keys/derivation';
+import { bitcoinNetwork, deriveAccountNode, type Network } from '../keys/derivation';
 import { scriptPubKeyHex } from '../keys/script-hash';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
 import { getCryptoProvider } from '../vault/crypto-provider';
@@ -26,6 +26,9 @@ import type {
   CommunityVaultSaleBuyerProviderReviewV1,
   CommunityVaultSaleProviderReviewV1,
 } from '../community-vault/sale-provider';
+import type {
+  CommunityVaultPositionTransferProviderReviewV1,
+} from '../community-vault/position-transfer-provider';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -89,6 +92,7 @@ export interface ProviderPsbtPlanV3 {
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
   communityVaultSaleBuyer?: CommunityVaultSaleBuyerProviderReviewV1;
+  communityVaultPositionTransfer?: CommunityVaultPositionTransferProviderReviewV1;
 }
 
 /** Compatibility name for call sites; only version 4 is constructible. */
@@ -305,7 +309,7 @@ function previousOutput(tx: Transaction, index: number): { valueSats: bigint; sc
 }
 
 function outputAddress(tx: Transaction, index: number, network: Network): string {
-  const address = tx.getOutputAddress(index, network === 'mainnet' ? NETWORK : TEST_NETWORK);
+  const address = tx.getOutputAddress(index, bitcoinNetwork(network));
   if (!address) throw new Error('unsupported non-address output');
   return address;
 }
@@ -333,6 +337,7 @@ export function createProviderPsbtPlan(input: {
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
   communityVaultSaleBuyer?: CommunityVaultSaleBuyerProviderReviewV1;
+  communityVaultPositionTransfer?: CommunityVaultPositionTransferProviderReviewV1;
   marketplace?: {
     context: MarketplaceContext;
     resolution: MarketplaceResolution;
@@ -344,12 +349,14 @@ export function createProviderPsbtPlan(input: {
     input.communityVaultAcquisition,
     input.communityVaultSale,
     input.communityVaultSaleBuyer,
+    input.communityVaultPositionTransfer,
   ]
     .filter((candidate) => candidate !== undefined);
   if (specialContexts.length > 1) {
     throw new Error('marketplace and Community Vault plans are mutually exclusive');
   }
-  if ((input.communityVaultAcquisition || input.communityVaultSale || input.communityVaultSaleBuyer) &&
+  if ((input.communityVaultAcquisition || input.communityVaultSale || input.communityVaultSaleBuyer ||
+      input.communityVaultPositionTransfer) &&
       (input.network !== 'mainnet' || input.broadcast)) {
     throw new Error('Community Vault signing is mainnet-only and never broadcasts');
   }
@@ -402,6 +409,11 @@ export function createProviderPsbtPlan(input: {
       JSON.stringify(requestedIndexes ?? []) !==
         JSON.stringify(input.communityVaultSaleBuyer.selectedInputIndexes)) {
     throw new Error('Community Vault buyer signer indexes changed');
+  }
+  if (input.communityVaultPositionTransfer &&
+      JSON.stringify(requestedIndexes ?? []) !==
+        JSON.stringify(input.communityVaultPositionTransfer.selectedInputIndexes)) {
+    throw new Error('Community Vault position-transfer signer indexes changed');
   }
   if (input.marketplace && (!marketplaceTemplate || !marketplaceRule || input.marketplace.resolution.status !== 'recognized')) {
     throw new Error('marketplace template resolution changed');
@@ -513,7 +525,11 @@ export function createProviderPsbtPlan(input: {
   const selectedInputIndexes = requestedIndexes ?? planInputs
     .map((item, index) => item.ownership === 'wallet' ? index : -1)
     .filter((index) => index >= 0);
-  const communitySaleIndexes = new Set(input.communityVaultSale?.selectedInputIndexes ?? []);
+  const communitySaleIndexes = new Set([
+    ...(input.communityVaultSale?.selectedInputIndexes ?? []),
+    ...(input.communityVaultPositionTransfer?.role === 'owner'
+      ? input.communityVaultPositionTransfer.selectedInputIndexes : []),
+  ]);
   if (selectedInputIndexes.length === 0 || selectedInputIndexes.some((index) =>
     !planInputs[index] || (planInputs[index]!.ownership !== 'wallet' && !communitySaleIndexes.has(index)))) {
     throw new Error('requested input is not owned by the active account');
@@ -613,7 +629,8 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' :
       input.communityVaultAcquisition ? 'community_vault_acquisition' :
-        input.communityVaultSale || input.communityVaultSaleBuyer ? 'community_vault_sale' :
+        input.communityVaultSale || input.communityVaultSaleBuyer || input.communityVaultPositionTransfer
+          ? 'community_vault_sale' :
         input.kind ?? 'provider_psbt',
     source: input.source,
     inputs: planInputs,
@@ -664,12 +681,13 @@ export function createProviderPsbtPlan(input: {
     account: input.account,
     kind: input.marketplace ? 'marketplace_psbt' as const :
       input.communityVaultAcquisition ? 'community_vault_acquisition' as const :
-        input.communityVaultSale || input.communityVaultSaleBuyer ? 'community_vault_sale' as const :
+        input.communityVaultSale || input.communityVaultSaleBuyer || input.communityVaultPositionTransfer
+          ? 'community_vault_sale' as const :
         input.kind ?? 'provider_psbt',
     provider: input.binding,
     broadcast: input.broadcast,
     requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition ||
-      input.communityVaultSale || input.communityVaultSaleBuyer
+      input.communityVaultSale || input.communityVaultSaleBuyer || input.communityVaultPositionTransfer
       ? false : input.requiresAdvanced !== false,
     selectedInputIndexes,
     ...(genericCommitment ? { genericListing: {
@@ -703,6 +721,9 @@ export function createProviderPsbtPlan(input: {
     } : {}),
     ...(input.communityVaultSaleBuyer ? {
       communityVaultSaleBuyer: input.communityVaultSaleBuyer,
+    } : {}),
+    ...(input.communityVaultPositionTransfer ? {
+      communityVaultPositionTransfer: input.communityVaultPositionTransfer,
     } : {}),
   };
   const transactionCommitmentHash = providerTransactionCommitmentHash(withoutHash);

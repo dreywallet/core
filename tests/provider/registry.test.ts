@@ -70,7 +70,11 @@ describe('provider operation registry', () => {
     expect(getInfo.safeParse({ ...base, capabilities: ['community-vault-v1'] }).success).toBe(true);
     expect(getInfo.safeParse({
       ...base,
-      capabilities: ['community-vault-v1', 'community-vault-offers-v1'],
+      capabilities: [
+        'community-vault-v1',
+        'community-vault-offers-v1',
+        'community-vault-position-transfer-v1',
+      ],
     }).success).toBe(true);
     expect(getInfo.safeParse({ ...base, capabilities: ['unknown-capability'] }).success).toBe(false);
   });

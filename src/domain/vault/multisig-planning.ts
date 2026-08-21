@@ -6,8 +6,8 @@
  * selection, exact fee/vsize solving, canonical plan bytes, PSBT construction,
  * and B3 Full Sat Safety validation live here.
  */
-import { NETWORK, TEST_NETWORK, Transaction } from '@scure/btc-signer';
-import { BIP32_MAX_INDEX, type Network } from '../keys/derivation';
+import { Transaction } from '@scure/btc-signer';
+import { BIP32_MAX_INDEX, bitcoinNetwork, type Network } from '../keys/derivation';
 import { scriptDustSats } from '../transactions/fees';
 import { createVaultAssetSafePartialSignatureInput, type VaultAssetPolicyEvidenceV1 } from './multisig-asset-policy';
 import type {
@@ -83,7 +83,7 @@ export class VaultPlanBuildError extends Error {
 }
 
 function networkFor(network: Network) {
-  return network === 'mainnet' ? NETWORK : TEST_NETWORK;
+  return bitcoinNetwork(network);
 }
 
 function buildUnsignedTransaction(

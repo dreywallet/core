@@ -1,5 +1,5 @@
-import { NETWORK, SigHash, TEST_NETWORK, Transaction } from '@scure/btc-signer';
-import type { Network } from '../keys/derivation';
+import { SigHash, Transaction } from '@scure/btc-signer';
+import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { base64ToBytes, bytesToHex } from '../vault/encoding';
 import type { PlanInput, PlanOutput, ProtectedSatFlow } from '../transactions/plan';
 import type { MarketplaceContext } from './types';
@@ -18,7 +18,7 @@ function outputAddress(tx: Transaction, index: number, network: Network): string
   const output = tx.getOutput(index);
   if (!output.script) return null;
   try {
-    return tx.getOutputAddress(index, network === 'mainnet' ? NETWORK : TEST_NETWORK) ?? null;
+    return tx.getOutputAddress(index, bitcoinNetwork(network)) ?? null;
   } catch {
     return null;
   }

@@ -1,12 +1,15 @@
 /** Exact-funded, direct-payout Community Vault v1 sale profile. */
-import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import type { HDKey } from '@scure/bip32';
-import { Address, NETWORK, OutScript, SigHash, Transaction } from '@scure/btc-signer';
-import { hash160 } from '@scure/btc-signer/utils';
+import { Address, NETWORK, OutScript, Transaction } from '@scure/btc-signer';
 import { scriptDustSats } from '../transactions/fees';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '../vault/encoding';
 import type { CommunityVaultPolicyV1 } from './contracts';
+import {
+  assertCommunityVaultBuyerInput,
+  communityVaultBuyerSpendInput,
+  verifyCommunityVaultBuyerInput,
+} from './buyer-funding';
 import { assertCommunityVaultPolicy } from './policy';
 import {
   approveCommunityVaultSpend,
@@ -111,22 +114,11 @@ function payoutSnapshotHash(policy: CommunityVaultPolicyV1): string {
 }
 
 function assertBuyerInput(input: CommunityVaultSaleBuyerInputV1): void {
-  const kind = /^0014[0-9a-f]{40}$/u.test(input.scriptPubKeyHex) ? 'p2wpkh'
-    : /^5120[0-9a-f]{64}$/u.test(input.scriptPubKeyHex) ? 'p2tr' : null;
-  if (kind !== input.scriptKind || BigInt(input.valueSats) <= 0n ||
-      (kind === 'p2wpkh' ? input.sighashType !== SigHash.ALL : input.sighashType !== SigHash.DEFAULT)) {
-    throw new Error('Community Vault buyer input is not clean whole-transaction funding');
-  }
+  assertCommunityVaultBuyerInput(input);
 }
 
 function buyerSpendInput(input: CommunityVaultSaleBuyerInputV1) {
-  return {
-    txid: input.txid,
-    vout: input.vout,
-    valueSats: input.valueSats,
-    scriptPubKeyHex: input.scriptPubKeyHex,
-    sequence: input.sequence,
-  };
+  return communityVaultBuyerSpendInput(input);
 }
 
 export function createCommunityVaultSalePlan(draft: CommunityVaultSaleDraftV1): CommunityVaultSalePlanV1 {
@@ -372,40 +364,12 @@ export function constructCommunityVaultSalePsbt(
 }
 
 function verifyBuyerInput(tx: Transaction, plan: CommunityVaultSalePlanV1, offset: number): void {
-  const index = offset + 1;
-  const expected = plan.buyerInputs[offset]!;
-  const witness = tx.getInput(index).finalScriptWitness ?? [];
-  if (expected.scriptKind === 'p2wpkh') {
-    const signature = witness[0];
-    const publicKey = witness[1];
-    const keyHash = expected.scriptPubKeyHex.slice(4);
-    if (witness.length !== 2 || !signature || signature.length < 2 || !publicKey ||
-        signature.at(-1) !== expected.sighashType || bytesToHex(hash160(publicKey)) !== keyHash) {
-      throw new Error(`Community Vault buyer input ${index} is not exactly funded`);
-    }
-    const message = tx.preimageWitnessV0(
-      index, hexToBytes(`76a914${keyHash}88ac`), expected.sighashType, BigInt(expected.valueSats),
-    );
-    if (!secp256k1.verify(signature.slice(0, -1), message, publicKey, {
-      format: 'der', prehash: false, lowS: true,
-    })) throw new Error(`Community Vault buyer input ${index} signature is invalid`);
-    return;
-  }
-  const signature = witness[0];
-  if (witness.length !== 1 || !signature || (signature.length !== 64 && signature.length !== 65)) {
-    throw new Error(`Community Vault buyer input ${index} is not exactly funded`);
-  }
-  const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
-  if (sighash !== expected.sighashType) throw new Error(`Community Vault buyer input ${index} sighash differs`);
-  const message = tx.preimageWitnessV1(
-    index,
-    plan.spendPlan.inputs.map((item) => hexToBytes(item.scriptPubKeyHex)),
-    sighash,
-    plan.spendPlan.inputs.map((item) => BigInt(item.valueSats)),
-  );
-  if (!schnorr.verify(signature.slice(0, 64), message, hexToBytes(expected.scriptPubKeyHex).slice(2))) {
-    throw new Error(`Community Vault buyer input ${index} signature is invalid`);
-  }
+  verifyCommunityVaultBuyerInput({
+    tx,
+    buyerInput: plan.buyerInputs[offset]!,
+    inputIndex: offset + 1,
+    spendInputs: plan.spendPlan.inputs,
+  });
 }
 
 export function validateCommunityVaultSalePsbt(

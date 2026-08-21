@@ -6,8 +6,8 @@
  * compatible wallet. Keeping the external mode explicit prevents a future
  * rotating-address mode from silently inheriting that classification.
  */
-import { Address, NETWORK, OutScript, TEST_NETWORK } from '@scure/btc-signer';
-import type { Network } from '../keys/derivation';
+import { Address, OutScript } from '@scure/btc-signer';
+import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { bytesToHex, hexToBytes } from '../vault/encoding';
 import type { WalletUtxo } from './types';
 
@@ -49,7 +49,7 @@ export function ownedAddressFromUtxo(
   network: Network,
   externalMode: ExternalAddressMode = 'stable',
 ): OwnedAddress {
-  const codec = Address(network === 'mainnet' ? NETWORK : TEST_NETWORK);
+  const codec = Address(bitcoinNetwork(network));
   const script = OutScript.decode(hexToBytes(utxo.scriptPubKey));
   const address = codec.encode(script);
   const roundTrip = bytesToHex(OutScript.encode(codec.decode(address)));

@@ -96,6 +96,21 @@ describe('ADR 0007 B1 canonical Vault descriptors', () => {
     },
   );
 
+  it('binds test-key descriptors to regtest policy identity and bcrt outputs', () => {
+    const signet = b0.records.signet.policy;
+    const signers = signet.signers.map((signer) => ({ ...signer, network: 'regtest' as const }));
+    const policy = generateVaultPolicyIdentity('regtest', signers);
+    expect(policy.policyId).not.toBe(signet.policyId);
+    expect(policy.receiveDescriptor).toBe(signet.receiveDescriptor);
+    expect(parseCanonicalVaultPolicyDescriptors(
+      policy.receiveDescriptor,
+      policy.changeDescriptor,
+      'regtest',
+    )).toEqual(policy);
+    expect(() => assertVaultDescriptorPolicy(policy)).not.toThrow();
+    expect(deriveVaultOutput(policy, 'receive', 0).address.startsWith('bcrt1q')).toBe(true);
+  });
+
   it.each(['mainnet', 'signet'] as const)(
     'pins stable %s @scure outputs cross-checked by Bitcoin Core',
     (network) => {

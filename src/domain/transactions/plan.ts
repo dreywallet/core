@@ -617,7 +617,7 @@ function ordinalBatchActionReviewFromPlan(plan: TransactionPlan): OrdinalBatchAc
 // decrypt, making any accepted structural value immutable in practice.
 const bigintSchema = z.bigint().nonnegative();
 const derivationSchema = z.object({
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u).optional(),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u).optional(),
   account: z.number().int().nonnegative(), lane: z.enum(['payment', 'ordinals']),
   chain: z.union([z.literal(0), z.literal(1)]), index: z.number().int().nonnegative(),
   path: z.string().min(1), publicKeyHex: z.string().regex(/^[0-9a-f]+$/),
@@ -717,7 +717,7 @@ const planFeePolicySchema: z.ZodType<PlanFeePolicy> = z.union([
 
 const commonPlanShape = {
   planId: z.string().min(1), createdAt: z.number().int().nonnegative(),
-  expiresAt: z.number().int().positive(), network: z.enum(['mainnet','signet']),
+  expiresAt: z.number().int().positive(), network: z.enum(['mainnet','signet','regtest']),
   account: z.number().int().nonnegative(), kind: z.enum([
     'native_send', 'native_batch_send', 'ordinal_transfer', 'ordinal_batch_transfer', 'ordinal_postage_manage', 'consolidation', 'rbf', 'cpfp', 'rescue', 'ordinal_sweep',
   ]),
@@ -751,7 +751,7 @@ const commonPlanShape = {
 export const transactionPlanSchema: z.ZodType<TransactionPlan> = z.object({
   version: z.literal(4),
   ...commonPlanShape,
-  accountId: z.string().regex(/^acct_(?:mainnet|signet)_[0-9a-f]{64}$/u),
+  accountId: z.string().regex(/^acct_(?:mainnet|signet|regtest)_[0-9a-f]{64}$/u),
   policy: z.object({ intent: planIntentSchema, fee: planFeePolicySchema }).strict(),
   analysisHash: z.string().regex(/^[0-9a-f]{64}$/),
   transactionCommitmentHash: z.string().regex(/^[0-9a-f]{64}$/),

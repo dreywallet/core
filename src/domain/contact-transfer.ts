@@ -17,7 +17,7 @@ export const CONTACT_TRANSFER_VERSION = 1 as const;
 export const CONTACT_TRANSFER_TTL_MS = 10 * 60 * 1000;
 export const CONTACT_TRANSFER_MAX_BYTES = 256 * 1024;
 
-const networkSchema = z.enum(['mainnet', 'signet']);
+const networkSchema = z.enum(['mainnet', 'signet', 'regtest']);
 const hex16 = z.string().regex(/^[0-9a-f]{32}$/u);
 const compressedPublicKey = z.string().regex(/^(?:02|03)[0-9a-f]{64}$/u);
 const boxSchema = z.object({ nonceB64: z.string().min(1), ciphertextB64: z.string().min(1) }).strict();

@@ -25,9 +25,9 @@
  * a spot-check of 2–3 derived addresses against a throwaway real Xverse
  * install before this manifest is treated as final.
  */
-import { NETWORK, TEST_NETWORK, p2sh, p2tr, p2wpkh } from '@scure/btc-signer';
+import { p2sh, p2tr, p2wpkh } from '@scure/btc-signer';
 import type { HDKey } from '@scure/bip32';
-import { assertBip32Index, type AddressKind, type Network } from './derivation';
+import { assertBip32Index, bitcoinNetwork, type AddressKind, type Network } from './derivation';
 
 export type LegacyAddressType = 'p2sh-p2wpkh' | 'p2wpkh' | 'p2tr';
 
@@ -99,11 +99,19 @@ export const XVERSE_MANIFEST_SIGNET: LegacyPathManifest = {
   entries: XVERSE_ENTRIES,
 };
 
+export const XVERSE_MANIFEST_REGTEST: LegacyPathManifest = {
+  id: 'xverse',
+  sourceVersion: SOURCE_VERSION,
+  network: 'regtest',
+  entries: XVERSE_ENTRIES,
+};
+
 export function xverseManifest(network: Network): LegacyPathManifest {
-  return network === 'mainnet' ? XVERSE_MANIFEST_MAINNET : XVERSE_MANIFEST_SIGNET;
+  return network === 'mainnet' ? XVERSE_MANIFEST_MAINNET :
+    network === 'signet' ? XVERSE_MANIFEST_SIGNET : XVERSE_MANIFEST_REGTEST;
 }
 
-const COIN_TYPE: Record<Network, number> = { mainnet: 0, signet: 1 };
+const COIN_TYPE: Record<Network, number> = { mainnet: 0, signet: 1, regtest: 1 };
 
 /** m/purpose'/coin'/0' — the single hardened account legacy discovery scans. */
 export function legacyAccountPath(entry: LegacyPathEntry, network: Network): string {
@@ -134,7 +142,7 @@ export function deriveLegacyAddress(
   const key = node.deriveChild(chain).deriveChild(index);
   const publicKey = key.publicKey;
   if (!publicKey) throw new Error('derived node has no public key');
-  const net = network === 'mainnet' ? NETWORK : TEST_NETWORK;
+  const net = bitcoinNetwork(network);
   const payment =
     entry.addressType === 'p2sh-p2wpkh'
       ? p2sh(p2wpkh(publicKey, net), net)

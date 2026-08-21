@@ -11,9 +11,9 @@
  * Pure domain module: callers must have awaited initSodium() (the worker
  * composition root does this at startup).
  */
-import { NETWORK, TEST_NETWORK, p2tr, p2wpkh } from '@scure/btc-signer';
+import { p2tr, p2wpkh } from '@scure/btc-signer';
 import { getCryptoProvider } from '../vault/crypto-provider';
-import type { AddressKind, Network } from './derivation';
+import { bitcoinNetwork, type AddressKind, type Network } from './derivation';
 
 function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/.test(hex)) {
@@ -35,7 +35,7 @@ function bytesToHex(bytes: Uint8Array): string {
 /** Raw output script (scriptPubKey) for a derived public key, lowercase hex. */
 export function scriptPubKeyHex(publicKeyHex: string, kind: AddressKind, network: Network): string {
   const publicKey = hexToBytes(publicKeyHex);
-  const net = network === 'mainnet' ? NETWORK : TEST_NETWORK;
+  const net = bitcoinNetwork(network);
   const script =
     kind === 'payment'
       ? p2wpkh(publicKey, net).script

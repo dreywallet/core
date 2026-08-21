@@ -82,7 +82,7 @@ export interface VaultInscriptionEvidenceV1 {
 
 export interface VaultInputAssetEvidenceV1 {
   version: 1;
-  network: 'mainnet' | 'signet';
+  network: 'mainnet' | 'signet' | 'regtest';
   inputIndex: number;
   txid: string;
   vout: number;
@@ -106,7 +106,7 @@ export interface VaultInputAssetEvidenceV1 {
 
 export interface VaultAssetPolicyEvidenceV1 {
   version: 1;
-  network: 'mainnet' | 'signet';
+  network: 'mainnet' | 'signet' | 'regtest';
   policyId: string;
   planId: string;
   planDigest: string;
@@ -125,7 +125,7 @@ export interface VaultAssetPolicyEvidenceV1 {
 
 export interface VaultAssetPolicyValidationV1 {
   version: 1;
-  network: 'mainnet' | 'signet';
+  network: 'mainnet' | 'signet' | 'regtest';
   policyId: string;
   planId: string;
   planDigest: string;
@@ -148,7 +148,7 @@ const inscriptionEvidenceSchema: z.ZodType<VaultInscriptionEvidenceV1> = z.objec
 
 export const vaultInputAssetEvidenceSchema: z.ZodType<VaultInputAssetEvidenceV1> = z.object({
   version: z.literal(1),
-  network: z.enum(['mainnet', 'signet']),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   inputIndex: z.number().int().min(0).max(U32_MAX),
   txid: hex32,
   vout: z.number().int().min(0).max(U32_MAX),
@@ -182,7 +182,7 @@ export const vaultInputAssetEvidenceSchema: z.ZodType<VaultInputAssetEvidenceV1>
 
 export const vaultAssetPolicyEvidenceSchema: z.ZodType<VaultAssetPolicyEvidenceV1> = z.object({
   version: z.literal(1),
-  network: z.enum(['mainnet', 'signet']),
+  network: z.enum(['mainnet', 'signet', 'regtest']),
   policyId: hex32,
   planId: z.string().regex(/^[0-9a-f]{32}$/u),
   planDigest: hex32,
@@ -253,7 +253,7 @@ export function canonicalVaultInputAssetEvidenceBytes(
   const writer = new EvidenceWriter();
   writer.raw(Uint8Array.of(0x53, 0x51, 0x56, 0x45)); // SQVE
   writer.u8(1);
-  writer.u8(value.network === 'mainnet' ? 0 : 1);
+  writer.u8(value.network === 'mainnet' ? 0 : value.network === 'signet' ? 1 : 2);
   writer.u32(value.inputIndex);
   writer.bytes(hexToBytes(value.txid));
   writer.u32(value.vout);
