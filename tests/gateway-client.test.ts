@@ -13,7 +13,12 @@ import {
   type GatewayClientDeps,
 } from '../src/gateway-client';
 import { makeTestKeypair, signTestBody } from './gateway/sign-helper';
-import { feeQuoteResponseSchema, fiatPriceQuoteSchema } from '../src/domain/gateway/contract';
+import {
+  feeQuoteResponseSchema,
+  fiatPriceQuoteSchema,
+  statusCapabilitiesV2Schema,
+  type BroadcastRequest,
+} from '../src/domain/gateway/contract';
 
 const fixturesDir = join(import.meta.dirname, 'fixtures', 'gateway');
 const signedBody = new Uint8Array(readFileSync(join(fixturesDir, 'status.signed.json')));
@@ -63,14 +68,18 @@ describe('GatewayClient.fetchStatus', () => {
   it('sends the nonce header and returns the verified status', async () => {
     let capturedUrl: string | undefined;
     let capturedNonce: string | null | undefined;
+    let capturedInit: RequestInit | undefined;
     const fetchFn: typeof fetch = async (input, init) => {
       capturedUrl = String(input);
       capturedNonce = new Headers(init?.headers).get(NONCE_HEADER);
+      capturedInit = init;
       return new Response(signedBody.slice().buffer, { status: 200 });
     };
     const result = await makeClient(fetchFn).fetchStatus();
     expect(capturedUrl).toBe('http://127.0.0.1:8080/v1/status');
     expect(capturedNonce).toBe(FIXTURE_NONCE);
+    expect(capturedInit?.method).toBe('GET');
+    expect(capturedInit?.redirect).toBe('error');
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.status.network).toBe('signet');
@@ -157,6 +166,58 @@ describe('GatewayClient.fetchStatus', () => {
 describe('GatewayClient M7 signed endpoints', () => {
   const nonce = '00112233445566778899aabbccddeeff';
   const feeTime = Date.parse((JSON.parse(new TextDecoder().decode(signedFees)) as { timestamp: string }).timestamp);
+  const feeQuote = feeQuoteResponseSchema.parse(JSON.parse(new TextDecoder().decode(signedFees)));
+  const status = statusCapabilitiesV2Schema.parse(JSON.parse(new TextDecoder().decode(signedBody)));
+  const quotedRequest: BroadcastRequest = {
+    network: 'signet', transactionHex: '00', txid: 'd'.repeat(64), wtxid: 'e'.repeat(64),
+    feeTarget: 6, feeQuote,
+  };
+  const customFeeRequest: BroadcastRequest = {
+    network: 'signet', transactionHex: '00', txid: 'd'.repeat(64), wtxid: 'e'.repeat(64),
+    customFeeRateSatPerKvB: 2_000, status,
+  };
+
+  function broadcastEnvelope(
+    request: BroadcastRequest,
+    resultStatus: 'accepted' | 'already_known' | 'confirmed' | 'conflicted' | 'rejected' | 'indeterminate',
+  ): Record<string, unknown> {
+    const source = 'feeQuote' in request ? request.feeQuote : request.status;
+    const successful = ['accepted', 'already_known', 'confirmed'].includes(resultStatus);
+    return {
+      instanceId: source.instanceId,
+      network: source.network,
+      protocolVersion: source.protocolVersion,
+      requestNonce: nonce,
+      timestamp: new Date(feeTime).toISOString(),
+      coreTip: source.coreTip,
+      indexTip: source.indexTip,
+      classificationRevision: source.classificationRevision,
+      capabilities: source.capabilities,
+      signature: '',
+      submittedTxid: request.txid,
+      submittedWtxid: request.wtxid,
+      status: resultStatus,
+      txid: successful ? request.txid : null,
+      errorCode: resultStatus === 'rejected' ? 'TX_POLICY_REJECTED' : null,
+      detail: resultStatus === 'rejected' ? 'The transaction was rejected.' : null,
+    };
+  }
+
+  async function fetchBroadcast(
+    request: BroadcastRequest,
+    body: Record<string, unknown>,
+    expectedNetwork: GatewayClientDeps['expectedNetwork'] = 'signet',
+  ) {
+    const keypair = makeTestKeypair();
+    const signed = signTestBody(body, keypair);
+    const fetchFn: typeof fetch = async () => new Response(signed.slice().buffer, { status: 200 });
+    return makeClient(fetchFn, {
+      publicKeyHex: keypair.publicKeyHex,
+      expectedNetwork,
+      randomNonce: () => nonce,
+      now: () => feeTime,
+    }).broadcastTransaction(request);
+  }
 
   it('verifies the flat fee envelope and request nonce', async () => {
     const fetchFn: typeof fetch = async (input, init) => {
@@ -215,7 +276,6 @@ describe('GatewayClient M7 signed endpoints', () => {
     };
     const client = makeClient(fetchFn, { randomNonce: () => nonce, now: () => feeTime });
     const txid = 'd'.repeat(64);
-    const feeQuote = feeQuoteResponseSchema.parse(JSON.parse(new TextDecoder().decode(signedFees)));
     const request = { network: 'signet' as const, transactionHex: '00', txid,
       wtxid: 'e'.repeat(64), feeTarget: 6 as const, feeQuote };
     const accepted = await client.broadcastTransaction(request);
@@ -224,6 +284,68 @@ describe('GatewayClient M7 signed endpoints', () => {
 
     const mismatched = await client.broadcastTransaction({ ...request, txid: 'c'.repeat(64) });
     expect(mismatched).toEqual({ ok: false, reason: 'schema' });
+  });
+
+  it.each([
+    ['submitted txid', (body: Record<string, unknown>) => { body.submittedTxid = 'a'.repeat(64); }, 'signet'],
+    ['submitted wtxid', (body: Record<string, unknown>) => { body.submittedWtxid = 'a'.repeat(64); }, 'signet'],
+    ['request network', (body: Record<string, unknown>) => { body.network = 'mainnet'; }, 'mainnet'],
+    ['gateway instance', (body: Record<string, unknown>) => { body.instanceId = 'other-gateway'; }, 'signet'],
+    ['protocol', (body: Record<string, unknown>) => { body.protocolVersion = 1; }, 'signet'],
+    ['core tip', (body: Record<string, unknown>) => { body.coreTip = { height: 1, hash: 'a'.repeat(64) }; }, 'signet'],
+    ['index tip', (body: Record<string, unknown>) => { body.indexTip = { height: 1, hash: 'b'.repeat(64) }; }, 'signet'],
+    ['classification revision', (body: Record<string, unknown>) => { body.classificationRevision = 'other-revision'; }, 'signet'],
+    ['capabilities', (body: Record<string, unknown>) => { body.capabilities = ['broadcast']; }, 'signet'],
+    ['successful txid', (body: Record<string, unknown>) => { body.txid = 'a'.repeat(64); }, 'signet'],
+    ['missing successful txid', (body: Record<string, unknown>) => { body.txid = null; }, 'signet'],
+  ] as const)('rejects a validly signed broadcast with mutated %s binding', async (_label, mutate, expectedNetwork) => {
+    const body = broadcastEnvelope(quotedRequest, 'accepted');
+    mutate(body);
+    await expect(fetchBroadcast(quotedRequest, body, expectedNetwork)).resolves.toEqual({ ok: false, reason: 'schema' });
+  });
+
+  it.each(['accepted', 'already_known', 'confirmed', 'conflicted'] as const)(
+    'requires the exact request snapshot for %s',
+    async (resultStatus) => {
+      const body = broadcastEnvelope(quotedRequest, resultStatus);
+      body.classificationRevision = 'other-revision';
+      await expect(fetchBroadcast(quotedRequest, body)).resolves.toEqual({ ok: false, reason: 'schema' });
+    },
+  );
+
+  it.each(['accepted', 'already_known', 'confirmed', 'conflicted'] as const)(
+    'accepts a fully bound quoted-fee %s result',
+    async (resultStatus) => {
+      const result = await fetchBroadcast(quotedRequest, broadcastEnvelope(quotedRequest, resultStatus));
+      expect(result.ok && result.value.status).toBe(resultStatus);
+    },
+  );
+
+  it('accepts a fully bound custom-fee success result', async () => {
+    const result = await fetchBroadcast(customFeeRequest, broadcastEnvelope(customFeeRequest, 'accepted'));
+    expect(result.ok && result.value.status).toBe('accepted');
+  });
+
+  it.each(['rejected', 'indeterminate'] as const)(
+    'accepts the canonical server-owned unavailable envelope for %s',
+    async (resultStatus) => {
+      const body = broadcastEnvelope(quotedRequest, resultStatus);
+      body.coreTip = { height: 0, hash: '0'.repeat(64) };
+      body.indexTip = { height: 0, hash: '0'.repeat(64) };
+      body.classificationRevision = 'unavailable';
+      body.capabilities = [];
+      const result = await fetchBroadcast(quotedRequest, body);
+      expect(result.ok && result.value.status).toBe(resultStatus);
+    },
+  );
+
+  it('accepts an authenticated rejection and rejects a conflicted result carrying txid', async () => {
+    const rejected = await fetchBroadcast(quotedRequest, broadcastEnvelope(quotedRequest, 'rejected'));
+    expect(rejected.ok && rejected.value.status).toBe('rejected');
+
+    const conflicted = broadcastEnvelope(quotedRequest, 'conflicted');
+    conflicted.txid = quotedRequest.txid;
+    await expect(fetchBroadcast(quotedRequest, conflicted)).resolves.toEqual({ ok: false, reason: 'schema' });
   });
 
   it('retries classification after a 5xx with bounded jitter and a fresh nonce', async () => {
@@ -612,6 +734,24 @@ describe('GatewayClient M7 signed endpoints', () => {
     const fetchFn: typeof fetch = async () => {
       calls += 1;
       return new Response('{"bad":true}', { status: 200 });
+    };
+    const result = await makeClient(fetchFn, { sleep: async () => undefined }).classifyOutpoints({
+      network: 'signet',
+      outpoints: [{ txid: 'd'.repeat(64), vout: 0 }],
+    });
+    expect(result).toEqual({ ok: false, reason: 'schema' });
+    expect(calls).toBe(1);
+  });
+
+  it('rejects an unsafe signed tip height as a terminal schema failure', async () => {
+    const unsafe = {
+      ...classifyTemplate,
+      coreTip: { ...(classifyTemplate.coreTip as object), height: Number.MAX_SAFE_INTEGER + 1 },
+    };
+    let calls = 0;
+    const fetchFn: typeof fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify(unsafe), { status: 200 });
     };
     const result = await makeClient(fetchFn, { sleep: async () => undefined }).classifyOutpoints({
       network: 'signet',

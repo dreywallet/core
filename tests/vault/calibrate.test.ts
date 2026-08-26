@@ -47,10 +47,42 @@ describe('calibrateArgon2id', () => {
     expect(params.opsLimit).toBeLessThanOrEqual(ARGON2ID_CAPS.opsLimit);
   });
 
+  it('jumps over intermediate pass counts and verifies at most one estimate', async () => {
+    const calls: number[] = [];
+    const benchmark = fakeDevice(108);
+    const params = await calibrateArgon2id({
+      benchmark: async (candidate) => {
+        calls.push(candidate.opsLimit);
+        return benchmark(candidate);
+      },
+    });
+    expect(calls).toEqual([ARGON2ID_FLOORS.opsLimit, 14]);
+    expect(params.opsLimit).toBe(14);
+    expect(await benchmark(params)).toBeGreaterThanOrEqual(CALIBRATION_TARGET_MS.min);
+  });
+
+  it('uses one bounded revision when the first estimate undershoots', async () => {
+    const calls: number[] = [];
+    const params = await calibrateArgon2id({
+      benchmark: async (candidate) => {
+        calls.push(candidate.opsLimit);
+        if (candidate.opsLimit === ARGON2ID_FLOORS.opsLimit) return 200;
+        return 400;
+      },
+    });
+    expect(calls).toEqual([ARGON2ID_FLOORS.opsLimit, 8]);
+    expect(params.opsLimit).toBe(10);
+  });
+
   it('returns the capped maximum on an absurdly fast device', async () => {
-    const params = await calibrateArgon2id({ benchmark: () => Promise.resolve(1) });
+    let calls = 0;
+    const params = await calibrateArgon2id({ benchmark: () => {
+      calls += 1;
+      return Promise.resolve(1);
+    } });
     expect(params.memLimitBytes).toBe(ARGON2ID_CAPS.memLimitBytes);
     expect(params.opsLimit).toBe(ARGON2ID_CAPS.opsLimit);
+    expect(calls).toBe(1);
   });
 
   it('never undercuts floors or exceeds caps across a device-speed sweep', async () => {

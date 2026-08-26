@@ -1,5 +1,8 @@
 export const PROVIDER_MAX_PSBT_INPUTS = 200;
 export const PROVIDER_MAX_PSBT_OUTPUTS = 2_000;
+/** ord.net documents at most 41 entries; aggregate budgets remain single-request sized. */
+export const PROVIDER_MAX_PSBT_BATCH_ITEMS = 41;
+export const PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS = 1_500_000;
 
 export function assertProviderPsbtItemCounts(
   transaction: { inputsLength: number; outputsLength: number },

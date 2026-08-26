@@ -212,12 +212,14 @@ describe('provider PSBT analysis binding', () => {
           path: payment.path, publicKeyHex: payment.publicKeyHex },
       },
     }];
-    const create = (psbtBase64: string) => createProviderPsbtPlan({
+    const create = (psbtBase64: string, broadcast = false) => createProviderPsbtPlan({
       psbtBase64, binding, network: 'signet', vaultId: 'vault-1', sessionId: 'session-1',
-      accountId, account: 0, classifications, walletInputs, source, broadcast: false,
+      accountId, account: 0, classifications, walletInputs, source, broadcast,
       planId: '123e4567-e89b-42d3-a456-426614174002', now: 1_700_000_000_000,
       walletOutputs, selectedInputIndexes: [0],
     });
+    expect(() => create(listingPsbt(500_000n, paymentScript), true))
+      .toThrow(/generic listing may not request wallet broadcast/u);
     const plan = bindTestPlaceholders(create(listingPsbt(500_000n, paymentScript)));
     // A proven listing is one-click: no Advanced ceremony, no wallet fee exposure.
     expect(plan.requiresAdvanced).toBe(false);

@@ -19,7 +19,7 @@ export const voutSchema = z.number().int().min(0).max(0xffffffff);
 
 export const tipSchema = z
   .object({
-    height: z.number().int().nonnegative(),
+    height: z.number().int().nonnegative().safe(),
     hash: hexIdSchema,
   })
   .strict();
@@ -1334,5 +1334,14 @@ export const broadcastResultSchema = signedEnvelopeFieldsSchema
     errorCode: z.string().nullable(),
     detail: z.string().nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((result, ctx) => {
+    const hasTransaction = ['accepted', 'already_known', 'confirmed'].includes(result.status);
+    if (hasTransaction && result.txid === null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['txid'], message: 'successful broadcast requires txid' });
+    }
+    if (!hasTransaction && result.txid !== null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['txid'], message: 'non-success broadcast must not carry txid' });
+    }
+  });
 export type BroadcastResult = z.infer<typeof broadcastResultSchema>;

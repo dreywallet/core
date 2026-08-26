@@ -17,6 +17,7 @@
  */
 import type { z } from 'zod';
 import {
+  broadcastRequestSchema,
   broadcastResultSchema,
   feeQuoteResponseSchema,
   fiatPriceQuoteSchema,
@@ -194,6 +195,39 @@ function sameIdentity(a: InscriptionIdentity, b: InscriptionIdentity): boolean {
   return a.inscriptionId === b.inscriptionId && a.satpoint === b.satpoint &&
     a.outpoint.txid === b.outpoint.txid && a.outpoint.vout === b.outpoint.vout &&
     a.classificationRevision === b.classificationRevision;
+}
+
+function sameTip(
+  a: { height: number; hash: string },
+  b: { height: number; hash: string },
+): boolean {
+  return a.height === b.height && a.hash === b.hash;
+}
+
+function sameCapabilities(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((capability, index) => capability === b[index]);
+}
+
+function isUnavailableBroadcastEnvelope(result: BroadcastResult): boolean {
+  const unavailableTip = { height: 0, hash: '0'.repeat(64) };
+  return sameTip(result.coreTip, unavailableTip) && sameTip(result.indexTip, unavailableTip) &&
+    result.classificationRevision === 'unavailable' && result.capabilities.length === 0;
+}
+
+function validBroadcastBinding(request: BroadcastRequest, result: BroadcastResult): boolean {
+  const source = 'feeQuote' in request ? request.feeQuote : request.status;
+  if (result.submittedTxid !== request.txid || result.submittedWtxid !== request.wtxid ||
+      request.network !== source.network || result.network !== request.network ||
+      result.instanceId !== source.instanceId || result.protocolVersion !== source.protocolVersion) {
+    return false;
+  }
+  const exactSnapshot = sameTip(result.coreTip, source.coreTip) &&
+    sameTip(result.indexTip, source.indexTip) &&
+    result.classificationRevision === source.classificationRevision &&
+    sameCapabilities(result.capabilities, source.capabilities);
+  const mayUseUnavailable = result.status === 'rejected' || result.status === 'indeterminate';
+  if (!exactSnapshot && !(mayUseUnavailable && isUnavailableBroadcastEnvelope(result))) return false;
+  return !['accepted', 'already_known', 'confirmed'].includes(result.status) || result.txid === request.txid;
 }
 
 function readUint32(bytes: Uint8Array, offset: number): number {
@@ -551,14 +585,16 @@ export class GatewayClient {
     req: BroadcastRequest,
     signal?: AbortSignal,
   ): Promise<FetchSignedResult<BroadcastResult>> {
+    const request = broadcastRequestSchema.safeParse(req);
+    if (!request.success) return { ok: false, reason: 'schema' };
     const result = await this.postSigned(
       '/v1/transactions/broadcast',
-      req,
+      request.data,
       broadcastResultSchema,
       NO_RETRY_30S,
       signal,
     );
-    if (result.ok && (result.value.submittedTxid !== req.txid || result.value.submittedWtxid !== req.wtxid)) {
+    if (result.ok && !validBroadcastBinding(request.data, result.value)) {
       return { ok: false, reason: 'schema' };
     }
     return result;
@@ -807,6 +843,7 @@ export class GatewayClient {
       const response = await this.deps.fetchFn(`${this.deps.baseUrl}${path}`, {
         ...init,
         headers,
+        redirect: 'error',
         signal: controller.signal,
       });
       if (response.status === 429) {

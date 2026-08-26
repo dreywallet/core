@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   normalizeProviderConnectionRequest,
+  PROVIDER_MAX_SIGN_MESSAGES,
+  PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES,
   PROVIDER_MAX_SIGN_INPUTS,
   PROVIDER_METHODS,
   PROVIDER_OPERATIONS,
@@ -19,11 +21,14 @@ describe('provider operation registry', () => {
         'wallet_requestPermissions',
         'wallet_getAccount',
         'wallet_getNetwork',
+        'wallet_getWalletType',
         'getAddresses',
         'getAccounts',
         'getBalance',
         'signMessage',
+        'signMultipleMessages',
         'signPsbt',
+        'signMultipleTransactions',
         'sendTransfer',
         'ord_getInscriptions',
         'ord_sendInscriptions',
@@ -37,7 +42,8 @@ describe('provider operation registry', () => {
 
   it('versions every op and applies connection/unlock/fresh-approval policy', () => {
     for (const spec of Object.values(PROVIDER_OPERATIONS)) expect(spec.version).toBe(1);
-    for (const method of ['signMessage', 'signPsbt', 'sendTransfer', 'ord_sendInscriptions'] as const) {
+    for (const method of ['signMessage', 'signMultipleMessages', 'signPsbt', 'signMultipleTransactions', 'sendTransfer',
+      'ord_sendInscriptions'] as const) {
       expect(PROVIDER_OPERATIONS[method]).toMatchObject({
         requiresConnection: true,
         requiresUnlock: true,
@@ -55,6 +61,12 @@ describe('provider operation registry', () => {
       requiresConnection: false,
       requiresUnlock: true,
       requiresFreshApproval: true,
+    });
+    expect(PROVIDER_OPERATIONS.wallet_getWalletType).toMatchObject({
+      requiresConnection: false,
+      requiresUnlock: false,
+      requiresFreshApproval: false,
+      dataCategories: [],
     });
   });
 
@@ -136,6 +148,81 @@ describe('provider operation registry', () => {
       signInputs: { tb1q00000000: [PROVIDER_MAX_SIGN_INPUTS] },
     }).success).toBe(false);
     expect(psbt.safeParse({ psbt: 'cHNidP8=', signInputs: {} }).success).toBe(false);
+  });
+
+  it('implements a bounded BIP322-only official multiple-message contract', () => {
+    const request = PROVIDER_OPERATIONS.signMultipleMessages.request;
+    const payment = { address: 'tb1q00000000', message: 'payment challenge', protocol: 'BIP322' };
+    const ordinal = { address: 'tb1p00000000', message: 'ordinal challenge' };
+    expect(request.safeParse([payment, ordinal]).success).toBe(true);
+    expect(request.safeParse([]).success).toBe(false);
+    expect(request.safeParse(Array.from({ length: PROVIDER_MAX_SIGN_MESSAGES + 1 }, (_, index) => ({
+      ...ordinal,
+      message: `challenge ${index}`,
+    }))).success).toBe(false);
+    expect(request.safeParse([{ ...payment, protocol: 'ECDSA' }]).success).toBe(false);
+    expect(request.safeParse([{ ...payment, message: 'hidden\0control' }]).success).toBe(false);
+    expect(request.safeParse([{ ...payment, extra: true }]).success).toBe(false);
+    expect(request.safeParse([payment, payment]).success).toBe(false);
+    expect(request.safeParse(Array.from({ length: PROVIDER_MAX_SIGN_MESSAGES }, (_, index) => ({
+      ...ordinal,
+      message: `${index}:${'a'.repeat(Math.floor(PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES /
+        PROVIDER_MAX_SIGN_MESSAGES))}`,
+    }))).success).toBe(false);
+
+    const response = PROVIDER_OPERATIONS.signMultipleMessages.response;
+    const results = [
+      {
+        signature: 'smp-payment', message: payment.message, messageHash: '11'.repeat(32),
+        address: payment.address, protocol: 'BIP322',
+      },
+      {
+        signature: 'smp-ordinal', message: ordinal.message, messageHash: '22'.repeat(32),
+        address: ordinal.address, protocol: 'BIP322',
+      },
+    ];
+    expect(response.safeParse(results).success).toBe(true);
+    expect(response.safeParse(results.toReversed()).success).toBe(true);
+    expect(response.safeParse([{ ...results[0], protocol: 'ECDSA' }]).success).toBe(false);
+    expect(response.safeParse([]).success).toBe(false);
+  });
+
+  it('implements the bounded official Sats Connect multi-transaction payload and result shapes', () => {
+    const request = PROVIDER_OPERATIONS.signMultipleTransactions.request;
+    const item = {
+      psbtBase64: 'cHNidP8=',
+      inputsToSign: [{ address: 'tb1q00000000', signingIndexes: [0], sigHash: 1 }],
+    };
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'Sign transactions', psbts: [item],
+    }).success).toBe(true);
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: '', psbts: [item],
+    }).success).toBe(true);
+    expect(request.safeParse({
+      network: { type: 'Mainnet', address: 'bc1q00000000' }, message: 'Sign transactions',
+      psbts: Array.from({ length: 41 }, () => ({ psbtBase64: 'cHNidP8=' })),
+    }).success).toBe(true);
+    expect(request.safeParse({ network: { type: 'Signet' }, message: 'x', psbts: [] }).success).toBe(false);
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'x',
+      psbts: Array.from({ length: 42 }, () => ({ psbtBase64: 'cHNidP8=' })),
+    }).success).toBe(false);
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'x', psbts: [{ ...item, broadcast: true }],
+    }).success).toBe(false);
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'x', psbts: [{
+        ...item,
+        inputsToSign: [{ address: 'tb1q00000000', signingIndexes: [0], sigHash: 3 }],
+      }],
+    }).success).toBe(false);
+    expect(PROVIDER_OPERATIONS.signMultipleTransactions.response.safeParse([
+      { psbtBase64: 'cHNidP8=', txId: '11'.repeat(32) },
+    ]).success).toBe(true);
+    expect(PROVIDER_OPERATIONS.signMultipleTransactions.response.safeParse([
+      { psbt: 'cHNidP8=' },
+    ]).success).toBe(false);
   });
 
   it('allows exactly one inscription transfer and only Bitcoin address purposes', () => {

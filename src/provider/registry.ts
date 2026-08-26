@@ -9,7 +9,15 @@
 import { z } from 'zod';
 import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
-import { PROVIDER_MAX_PSBT_INPUTS } from '../domain/transactions/provider-psbt-limits';
+import {
+  PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS,
+  PROVIDER_MAX_PSBT_BATCH_ITEMS,
+  PROVIDER_MAX_PSBT_INPUTS,
+} from '../domain/transactions/provider-psbt-limits';
+import {
+  PROVIDER_MAX_SIGN_MESSAGES,
+  PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES,
+} from '../domain/transactions/provider-message-batch-limits';
 import { communityVaultAcquisitionProviderContextSchema } from '../domain/community-vault/acquisition-provider';
 import {
   communityVaultSaleBuyerProviderContextSchema,
@@ -23,6 +31,8 @@ import {
 export const PROVIDER_OPERATION_VERSION = 1 as const;
 /** Matches the worker's existing maximum supported PSBT input count. */
 export const PROVIDER_MAX_SIGN_INPUTS = PROVIDER_MAX_PSBT_INPUTS;
+/** Small enough for a complete human review; ord.net authentication needs at most two. */
+export { PROVIDER_MAX_SIGN_MESSAGES, PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES };
 
 export const providerCapabilitySchema = z.enum([
   'community-vault-v1',
@@ -216,21 +226,26 @@ const getBalanceResultSchema = z
   .object({ confirmed: decimalSatsSchema, unconfirmed: decimalSatsSchema, total: decimalSatsSchema })
   .strict();
 
-const signMessageParamsSchema = z
+const bip322MessageSchema = z.string().superRefine((message, context) => {
+  try {
+    validateBip322Message(message);
+  } catch {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid BIP322 message' });
+  }
+});
+
+const bip322MessageItemSchema = z
   .object({
     address: addressSchema,
-    message: z.string().superRefine((message, context) => {
-      try {
-        validateBip322Message(message);
-      } catch {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid BIP322 message' });
-      }
-    }),
+    message: bip322MessageSchema,
     // Drey implements only strict BIP322 simple; ECDSA is intentionally absent.
     protocol: z.literal('BIP322').optional(),
-    marketplaceContext: marketplaceContextSchema.optional(),
   })
   .strict();
+
+const signMessageParamsSchema = bip322MessageItemSchema.extend({
+  marketplaceContext: marketplaceContextSchema.optional(),
+}).strict();
 
 const signMessageResultSchema = z
   .object({
@@ -240,6 +255,56 @@ const signMessageResultSchema = z
     protocol: z.literal('BIP322'),
   })
   .strict();
+
+export const signMultipleMessagesParamsSchema = z
+  .array(bip322MessageItemSchema)
+  .min(1)
+  .max(PROVIDER_MAX_SIGN_MESSAGES)
+  .superRefine((items, context) => {
+    const seen = new Set<string>();
+    let totalBytes = 0;
+    for (const item of items) {
+      const messageBytes = new TextEncoder().encode(item.message);
+      totalBytes += messageBytes.length;
+      const duplicateKey = `${item.address.length}:${item.address}:${messageBytes.length}:${item.message}`;
+      if (seen.has(duplicateKey)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'message batch contains a duplicate address and message',
+        });
+        return;
+      }
+      seen.add(duplicateKey);
+    }
+    if (totalBytes > PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `message batch may contain at most ${PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES} UTF-8 bytes`,
+      });
+    }
+  });
+export type SignMultipleMessagesParams = z.infer<typeof signMultipleMessagesParamsSchema>;
+
+export const signMultipleMessagesResultSchema = z
+  .array(z.object({
+    signature: z.string().min(1).max(8_192),
+    message: bip322MessageSchema,
+    messageHash: z.string().regex(/^[0-9a-f]{64}$/u),
+    address: addressSchema,
+    protocol: z.literal('BIP322'),
+  }).strict())
+  .min(1)
+  .max(PROVIDER_MAX_SIGN_MESSAGES)
+  .superRefine((items, context) => {
+    const totalBytes = items.reduce((total, item) =>
+      total + new TextEncoder().encode(item.message).length, 0);
+    if (totalBytes > PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `message batch result may contain at most ${PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES} UTF-8 bytes`,
+      });
+    }
+  });
 
 const signInputsSchema = z
   .record(
@@ -317,6 +382,66 @@ const signPsbtResultSchema = z
     txid: txidSchema.optional(),
   })
   .strict();
+
+export const satsConnectInputToSignSchema = z.object({
+  address: addressSchema,
+  signingIndexes: z.array(z.number().int().nonnegative().max(PROVIDER_MAX_SIGN_INPUTS - 1))
+    .min(1).max(PROVIDER_MAX_SIGN_INPUTS),
+  sigHash: z.union([z.literal(0), z.literal(1), z.literal(129), z.literal(131)]).optional(),
+}).strict();
+
+const satsConnectMultiplePsbtSchema = z.object({
+  psbtBase64: base64PsbtSchema,
+  inputsToSign: z.array(satsConnectInputToSignSchema).min(1).max(2).optional(),
+}).strict().superRefine((value, context) => {
+  const seenAddresses = new Set<string>();
+  const seenIndexes = new Set<number>();
+  for (const selection of value.inputsToSign ?? []) {
+    if (seenAddresses.has(selection.address)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'inputsToSign addresses must be unique' });
+      return;
+    }
+    seenAddresses.add(selection.address);
+    for (const index of selection.signingIndexes) {
+      if (seenIndexes.has(index)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'inputsToSign indexes must be unique' });
+        return;
+      }
+      seenIndexes.add(index);
+    }
+  }
+});
+
+export const signMultipleTransactionsParamsSchema = z.object({
+  network: z.object({
+    type: z.enum(['Mainnet', 'Testnet', 'Testnet4', 'Signet', 'Regtest']),
+    address: addressSchema.optional(),
+  }).strict(),
+  message: z.string().max(80),
+  psbts: z.array(satsConnectMultiplePsbtSchema).min(1).max(PROVIDER_MAX_PSBT_BATCH_ITEMS),
+}).strict().superRefine((value, context) => {
+  const encodedChars = value.psbts.reduce((total, item) => total + item.psbtBase64.length, 0);
+  if (encodedChars > PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `batch PSBT data may contain at most ${PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS} encoded characters`,
+    });
+  }
+  const selected = value.psbts.reduce((total, item) => total +
+    (item.inputsToSign?.reduce((count, selection) => count + selection.signingIndexes.length, 0) ?? 0), 0);
+  if (selected > PROVIDER_MAX_SIGN_INPUTS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `batch may select at most ${PROVIDER_MAX_SIGN_INPUTS} inputs`,
+    });
+  }
+});
+export type SignMultipleTransactionsParams = z.infer<typeof signMultipleTransactionsParamsSchema>;
+
+export const signMultipleTransactionsResultSchema = z.array(z.object({
+  psbtBase64: base64PsbtSchema,
+  txId: txidSchema.optional(),
+}).strict()).min(1).max(PROVIDER_MAX_PSBT_BATCH_ITEMS);
 
 const transferRecipientSchema = z
   .object({ address: addressSchema, amount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
@@ -454,6 +579,12 @@ export const PROVIDER_OPERATIONS = {
     ...READ_ACCOUNT,
     dataCategories: ['network'],
   }),
+  wallet_getWalletType: op(emptyParamsSchema, z.literal('software'), {
+    requiresConnection: false,
+    requiresUnlock: false,
+    requiresFreshApproval: false,
+    dataCategories: [],
+  }),
   getAddresses: op(getAddressesParamsSchema, getAddressesResultSchema, {
     ...READ_ACCOUNT,
     dataCategories: ['addresses', 'network'],
@@ -470,7 +601,15 @@ export const PROVIDER_OPERATIONS = {
     ...SIGN_OR_SEND,
     dataCategories: ['account_identity'],
   }),
+  signMultipleMessages: op(signMultipleMessagesParamsSchema, signMultipleMessagesResultSchema, {
+    ...SIGN_OR_SEND,
+    dataCategories: ['account_identity'],
+  }),
   signPsbt: op(signPsbtParamsSchema, signPsbtResultSchema, {
+    ...SIGN_OR_SEND,
+    dataCategories: ['account_identity'],
+  }),
+  signMultipleTransactions: op(signMultipleTransactionsParamsSchema, signMultipleTransactionsResultSchema, {
     ...SIGN_OR_SEND,
     dataCategories: ['account_identity'],
   }),

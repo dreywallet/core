@@ -20,6 +20,7 @@ export const ARGON2ID_CAPS = {
   memLimitBytes: 64 * 2 ** 20,
 } as const;
 export const CALIBRATION_TARGET_MS = { min: 500, max: 1000 } as const;
+const MIN_MEASURED_MS = 1;
 
 export interface CalibrationDeps {
   /** Runs one Argon2id derivation with the given params and returns elapsed milliseconds. */
@@ -31,16 +32,45 @@ function params(opsLimit: number, memLimitBytes: number): Argon2idParams {
 }
 
 export async function calibrateArgon2id(deps: CalibrationDeps): Promise<Argon2idParams> {
-  let candidate = params(ARGON2ID_FLOORS.opsLimit, ARGON2ID_FLOORS.memLimitBytes);
-  for (;;) {
-    const elapsed = await deps.benchmark(candidate);
-    if (elapsed >= CALIBRATION_TARGET_MS.min) return candidate;
-    if (candidate.opsLimit < ARGON2ID_CAPS.opsLimit) {
-      candidate = params(candidate.opsLimit + 1, candidate.memLimitBytes);
-    } else {
-      return candidate; // capped maximum on an extremely fast device
-    }
-  }
+  const floor = params(ARGON2ID_FLOORS.opsLimit, ARGON2ID_FLOORS.memLimitBytes);
+  const floorElapsed = await deps.benchmark(floor);
+  if (floorElapsed >= CALIBRATION_TARGET_MS.min) return floor;
+
+  // Argon2 work scales approximately with its pass count. Jump directly to
+  // the first estimated candidate instead of benchmarking every intermediate
+  // pass: repeated 64 MiB native allocations made first-run setup take
+  // minutes on some otherwise-fast mobile runtimes. One verification keeps
+  // the estimate honest without recreating that allocation ladder.
+  const estimatedOps = Math.min(
+    ARGON2ID_CAPS.opsLimit,
+    Math.max(
+      ARGON2ID_FLOORS.opsLimit + 1,
+      Math.ceil(
+        ARGON2ID_FLOORS.opsLimit * CALIBRATION_TARGET_MS.min /
+          Math.max(floorElapsed, MIN_MEASURED_MS),
+      ),
+    ),
+  );
+  const estimated = params(estimatedOps, ARGON2ID_FLOORS.memLimitBytes);
+  if (estimatedOps === ARGON2ID_CAPS.opsLimit) return estimated;
+
+  const estimatedElapsed = await deps.benchmark(estimated);
+  if (estimatedElapsed >= CALIBRATION_TARGET_MS.min) return estimated;
+
+  // A noisy or non-linear provider may undershoot once. Scale from the
+  // verified candidate and return the bounded revision without adding an
+  // unbounded calibration loop to the user's setup path.
+  const revisedOps = Math.min(
+    ARGON2ID_CAPS.opsLimit,
+    Math.max(
+      estimatedOps + 1,
+      Math.ceil(
+        estimatedOps * CALIBRATION_TARGET_MS.min /
+          Math.max(estimatedElapsed, MIN_MEASURED_MS),
+      ),
+    ),
+  );
+  return params(revisedOps, ARGON2ID_FLOORS.memLimitBytes);
 }
 
 /**

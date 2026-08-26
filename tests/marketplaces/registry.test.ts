@@ -67,6 +67,28 @@ describe('compile-time marketplace registry', () => {
       entry.origins.every((origin) => origin.startsWith('https://') && !origin.includes('*')))).toBe(true);
   });
 
+  it('keeps every enabled template on a reviewed single-request surface', () => {
+    expect(MARKETPLACE_TEMPLATES.every((entry) =>
+      entry.providerMethod === (entry.steps.length === 0 ? 'signMessage' : 'signPsbt'))).toBe(true);
+    expect(MARKETPLACE_TEMPLATES.find((entry) => entry.templateId === 'ordnet-list')).toMatchObject({
+      providerMethod: 'signPsbt',
+      action: 'list',
+      stepCount: 3,
+      steps: [
+        { allowedSighashes: [0], allowTaprootScriptPath: false },
+        { allowedSighashes: [0x83], allowTaprootScriptPath: true },
+        { allowedSighashes: [1], allowTaprootScriptPath: false },
+      ],
+    });
+    const forged = [...MARKETPLACE_TEMPLATES, {
+      ...MARKETPLACE_TEMPLATES.find((entry) => entry.templateId === 'ordnet-list')!,
+      templateId: 'ordnet-bulk-list-new',
+      action: 'bulk_list' as const,
+      activation: 'enabled' as const,
+    }];
+    expect(() => assertMarketplaceRegistryIntegrity(forged)).toThrow(/reviewed scope/u);
+  });
+
   it('matches the pinned Satflow contract but activates neither it nor a new origin/version', () => {
     const candidate = inspectMarketplacePsbt(flexiblePsbt());
     expect(resolveMarketplaceRequest({

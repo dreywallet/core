@@ -41,7 +41,7 @@ export interface ProviderAuthorityBinding {
   frameId: number;
   documentId: string;
   requestNonce: string;
-  providerMethod: 'signPsbt' | 'sendTransfer' | 'ord_sendInscriptions';
+  providerMethod: 'signPsbt' | 'signMultipleTransactions' | 'sendTransfer' | 'ord_sendInscriptions';
 }
 
 export interface ProviderPsbtPlanV3 {
@@ -547,6 +547,9 @@ export function createProviderPsbtPlan(input: {
     planInputs[index]!.sighash === SigHash.SINGLE_ANYONECANPAY);
   let genericCommitment: MarketplaceCommitmentAnalysis | null = null;
   if (genericFlexibleIndexes.length > 0) {
+    if (input.broadcast) {
+      throw new Error('generic listing may not request wallet broadcast');
+    }
     if (genericFlexibleIndexes.length !== selectedInputIndexes.length) {
       throw new Error('generic listing may not mix flexible and deterministic wallet signatures');
     }
@@ -811,6 +814,9 @@ export function signProviderPsbtPlan(input: {
   random: (length: number) => Uint8Array;
 }): { psbtBase64: string; transactionHex?: string } {
   assertProviderPsbtPlan(input.plan);
+  if (input.plan.genericListing && input.plan.broadcast) {
+    throw new Error('generic listing may not request wallet broadcast');
+  }
   if (publicAccountFromSeed(input.seed, input.plan.network, input.plan.account).accountId !==
       input.plan.accountId) {
     throw new Error('provider signer public account does not match transaction plan');

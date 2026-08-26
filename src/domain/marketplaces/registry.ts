@@ -26,6 +26,8 @@ export interface MarketplaceTemplate {
   action: MarketplaceAction;
   role: MarketplaceRole;
   assetKind: MarketplaceAssetKind;
+  /** Explicit single-request surface; batch activation requires a policy/schema release. */
+  providerMethod: 'signPsbt' | 'signMessage';
   networks: readonly Network[];
   broadcaster: 'site' | 'wallet' | 'context';
   stepCount: number | 'context';
@@ -58,13 +60,14 @@ function step(
 }
 
 function template(input: Omit<MarketplaceTemplate, 'registryVersion' | 'fixtureManifestDigest' |
-  'freshnessMs' | 'maxPsbtBytes' | 'activation'> &
+  'freshnessMs' | 'maxPsbtBytes' | 'activation' | 'providerMethod'> &
   Partial<Pick<MarketplaceTemplate, 'activation'>>): MarketplaceTemplate {
   return {
     registryVersion: MARKETPLACE_REGISTRY_VERSION,
     fixtureManifestDigest: FIXTURE_DIGEST,
     freshnessMs: FIVE_MINUTES,
     maxPsbtBytes: 1_500_000,
+    providerMethod: input.steps.length === 0 ? 'signMessage' : 'signPsbt',
     // Enabling a template is a security-policy release and must be
     // accompanied by reviewed vendor fixtures. ord.net single-inscription
     // templates were enabled 2026-08-10 against the published Trading API
@@ -178,6 +181,18 @@ export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = Object.free
     steps: [step(1, [0, 1])], sourceVersion: 'trading-api-1.0.0/ordnet-offer-v2' }),
 ]);
 
+const REVIEWED_ENABLED_TEMPLATES = new Set([
+  'ordnet-auth',
+  'ordnet-list',
+  'ordnet-buy',
+  'ordnet-offer',
+  'ordnet-counter',
+  'ordnet-accept-offer',
+  'ordnet-accept-counter',
+  'omb-wiki-ordnet-buy',
+  'omb-wiki-satflow-secure-buy',
+]);
+
 export function assertMarketplaceRegistryIntegrity(
   registry: readonly MarketplaceTemplate[] = MARKETPLACE_TEMPLATES,
 ): void {
@@ -202,15 +217,13 @@ export function assertMarketplaceRegistryIntegrity(
     if (entry.activation !== 'fixture_only' && entry.activation !== 'enabled') {
       throw new Error(`invalid marketplace activation ${entry.templateId}`);
     }
-    // Reviewed activation scope (2026-08-10): only ord.net single-inscription
-    // trading is enabled. Widening this scope is itself a policy release.
-    const reviewedOmbBuyer = entry.origins.length === 1 &&
-      entry.origins[0] === OMB_WIKI_ORIGIN[0] && entry.role === 'buyer' &&
-      entry.assetKind === 'inscription' && entry.broadcaster === 'site' &&
-      ((entry.marketplaceId === 'ordnet' && entry.action === 'buy') ||
-        (entry.marketplaceId === 'satflow' && entry.action === 'secure_buy'));
-    if (entry.activation === 'enabled' && !reviewedOmbBuyer &&
-        (entry.marketplaceId !== 'ordnet' || entry.assetKind !== 'inscription')) {
+    if ((entry.steps.length === 0) !== (entry.providerMethod === 'signMessage')) {
+      throw new Error(`marketplace provider method differs from reviewed steps ${entry.templateId}`);
+    }
+    // Reviewed activation scope (2026-08-10): the exact ord.net
+    // single-inscription and OMB Wiki buyer adapters below. Widening this
+    // scope is itself a policy release.
+    if (entry.activation === 'enabled' && !REVIEWED_ENABLED_TEMPLATES.has(entry.templateId)) {
       throw new Error(`marketplace activation outside the reviewed scope ${entry.templateId}`);
     }
   }

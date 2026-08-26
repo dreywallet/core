@@ -104,7 +104,7 @@ export function resolveMarketplaceRequest(input: {
     entry.marketplaceId === marketplaceId && entry.origins.includes(input.origin) &&
     entry.templateVersion === input.context!.templateVersion && entry.action === input.context!.action &&
     entry.role === input.context!.role && entry.assetKind === input.context!.assetKind &&
-    entry.networks.includes(input.network));
+    entry.networks.includes(input.network) && entry.providerMethod === input.method);
   if (candidates.length === 0) {
     return result('unsupported_action', null, marketplaceId, flexible,
       'This marketplace action, role, asset, or network is not supported.');
