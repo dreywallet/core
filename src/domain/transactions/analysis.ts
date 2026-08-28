@@ -17,23 +17,24 @@ import type {
   TransactionKind,
   TransactionPlan,
 } from './plan';
+import type { ProviderPsbtInputScriptType, ProviderPsbtOutputScriptType } from './provider-psbt-approval';
 import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 import { isAuthoritativeCardinalClean } from '../gateway/contract';
+import {
+  decodeSighash,
+  type SighashAnalysis,
+} from './psbt-commitment';
+
+export {
+  decodeSighash,
+  type SighashAnalysis,
+  type SighashOutputMode,
+} from './psbt-commitment';
 
 export type AnalysisTransactionKind = TransactionKind |
   'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt' |
   'community_vault_acquisition' | 'community_vault_sale';
-
-export type SighashOutputMode = 'default' | 'all' | 'none' | 'single';
-
-export interface SighashAnalysis {
-  raw: number;
-  outputMode: SighashOutputMode;
-  anyoneCanPay: boolean;
-  committedOutputIndexes: number[] | 'all';
-  validEncoding: boolean;
-}
 
 export type TransactionWarningCode =
   | 'high_absolute_fee'
@@ -69,7 +70,7 @@ export interface TransactionAnalysisInput {
   vout: number;
   valueSats: bigint;
   scriptPubKey: string;
-  scriptKind: ScriptKind;
+  scriptKind: ProviderPsbtInputScriptType;
   sequence: number;
   ownership: 'wallet' | 'external' | 'unproven';
   derivation: PlanDerivation | null;
@@ -82,7 +83,7 @@ export interface TransactionAnalysisOutput {
   valueSats: bigint;
   scriptPubKey: string;
   address: string | null;
-  role: PlanOutput['role'] | 'unknown';
+  role: PlanOutput['role'] | 'data' | 'unknown';
   ownership: 'wallet' | 'external' | 'unproven';
   derivation: PlanDerivation | null;
 }
@@ -119,10 +120,10 @@ export interface TransactionAnalysis {
   };
   fee: {
     sats: bigint;
-    vsize: bigint;
-    targetSatPerKvB: bigint;
+    vsize: bigint | null;
+    targetSatPerKvB: bigint | null;
     effectiveRateNumerator: bigint;
-    effectiveRateDenominator: bigint;
+    effectiveRateDenominator: bigint | null;
   };
   rbf: { replaceable: boolean; sequences: number[] };
   warnings: Array<AnalysisFinding<TransactionWarningCode>>;
@@ -142,19 +143,38 @@ export interface TransactionAnalysisContext {
   account: number;
   kind: AnalysisTransactionKind;
   source: TransactionPlan['source'];
-  inputs: readonly PlanInput[];
-  outputs: readonly PlanOutput[];
+  inputs: readonly AnalysisExpectedInput[];
+  outputs: readonly AnalysisExpectedOutput[];
   protectedSatFlow: readonly ProtectedSatFlow[];
   feeSats: bigint;
-  vsize: bigint;
-  feeRateSatPerKvB: bigint;
+  vsize: bigint | null;
+  feeRateSatPerKvB: bigint | null;
   rbf: boolean;
   marketplace?: {
     allowedSighashesByInput: Readonly<Record<number, readonly number[]>>;
     allowTaprootScriptPathInputIndexes: readonly number[];
+    allowTaprootTreeKeyPathInputIndexes?: readonly number[];
     permittedProtectedInputIndexes: readonly number[];
     commitment: NonNullable<TransactionAnalysis['marketplaceCommitment']>;
   };
+  providerPolicy?: {
+    selectedInputIndexes: readonly number[];
+    allowedSighashesByInput: Readonly<Record<number, readonly number[]>>;
+    allowTaprootScriptPathInputIndexes?: readonly number[];
+    allowTaprootTreeKeyPathInputIndexes?: readonly number[];
+    permittedProtectedInputIndexes?: readonly number[];
+    deferredZeroFee?: boolean;
+  };
+}
+
+export interface AnalysisExpectedInput extends Omit<PlanInput, 'sighash'> {
+  sighash: number;
+}
+
+export interface AnalysisExpectedOutput extends Omit<PlanOutput, 'address' | 'role'> {
+  address: string | null;
+  role: PlanOutput['role'] | 'data' | 'unknown';
+  scriptType?: ProviderPsbtOutputScriptType | undefined;
 }
 
 export type AnalyzeResult =
@@ -203,22 +223,6 @@ function hashInscriptionEffects(effects: readonly InscriptionEffect[]): string {
   return bytesToHex(getCryptoProvider().sha256(bytes));
 }
 
-export function decodeSighash(raw: number, inputIndex: number, outputCount: number): SighashAnalysis {
-  const anyoneCanPay = (raw & 0x80) !== 0;
-  const base = raw & 0x03;
-  const validEncoding = (raw & ~0x83) === 0;
-  const outputMode: SighashOutputMode = base === 0 ? 'default' : base === 1 ? 'all' : base === 2 ? 'none' : 'single';
-  const committedOutputIndexes =
-    outputMode === 'default' || outputMode === 'all'
-      ? 'all'
-      : outputMode === 'none'
-        ? []
-        : inputIndex < outputCount
-          ? [inputIndex]
-          : [];
-  return { raw, outputMode, anyoneCanPay, committedOutputIndexes, validEncoding };
-}
-
 function canonicalPath(derivation: PlanDerivation, network: Network): string {
   const purpose = derivation.lane === 'payment' ? 84 : 86;
   const coin = network === 'mainnet' ? 0 : 1;
@@ -240,6 +244,18 @@ function rawSighash(tx: Transaction, index: number, kind: ScriptKind): { raw: nu
   const signature = witness[0];
   if (!signature) return { raw: -1, scriptPath: false };
   return { raw: signature.length === 64 ? 0 : signature.length === 65 ? signature[64]! : -1, scriptPath: false };
+}
+
+function providerInputScriptKind(scriptPubKey: string): ProviderPsbtInputScriptType {
+  try {
+    return scriptKind(scriptPubKey);
+  } catch {
+    if (/^0020[0-9a-f]{64}$/u.test(scriptPubKey)) return 'p2wsh';
+    if (/^a914[0-9a-f]{40}87$/u.test(scriptPubKey)) return 'p2sh';
+    if (/^76a914[0-9a-f]{40}88ac$/u.test(scriptPubKey)) return 'p2pkh';
+    if (/^6a(?:[0-9a-f]{2})*$/u.test(scriptPubKey)) return 'op_return';
+    return 'unknown';
+  }
 }
 
 function outputAddress(tx: Transaction, index: number, network: Network): string | null {
@@ -308,11 +324,14 @@ function inscriptionEffects(
       // committed payout output, but the assembled purchase reorders inputs
       // freely, so the true effect is a sale. The signature always guarantees
       // the payout output, so the seller cannot lose both asset and proceeds.
+      const pinnedLinkedSaleLeg =
+        context.providerPolicy?.allowTaprootScriptPathInputIndexes?.includes(inputIndex) === true &&
+        analyzedInput.sighash.raw === 0x83;
       const saleLeg = context.marketplace?.commitment.mode === 'partial' &&
         analyzedInput.ownership === 'wallet' &&
         analyzedInput.sighash.raw === 0x83 &&
         context.marketplace.commitment.selectedInputIndexes.includes(inputIndex) &&
-        outputIndex === inputIndex;
+        (outputIndex === inputIndex || pinnedLinkedSaleLeg);
       if (!analyzedOutput || !output || analyzedOutput.ownership === 'unproven' ||
           (analyzedOutput.ownership === 'wallet' && output.derivation?.lane !== 'ordinals' &&
             !saleLeg && (context.kind !== 'ordinal_batch_transfer' ||
@@ -340,7 +359,14 @@ function inscriptionEffects(
       if (movement === null) continue;
       const partial = context.marketplace?.commitment.mode === 'partial';
       const guaranteed = context.marketplace?.commitment.guaranteedOutputIndexes;
-      const destinationCommitted = guaranteed === 'all' || guaranteed?.includes(outputIndex) === true;
+      // In a multi-input pinned linked sale, the incomplete PSBT's FIFO view
+      // can place several inscriptions in an earlier payout output. The actual
+      // authorization is still the corresponding SINGLE output; the group
+      // proof separately binds the shared all-wallet recovery alternative.
+      const authorizationOutputIndex = pinnedLinkedSaleLeg ? inputIndex : outputIndex;
+      const destinationCommitted = pinnedLinkedSaleLeg
+        ? authorizationOutputIndex < context.outputs.length
+        : guaranteed === 'all' || guaranteed?.includes(authorizationOutputIndex) === true;
       const qualifiedPartialAuthorization = movement === 'sent' && partial &&
         context.marketplace?.commitment.selectedInputIndexes.includes(inputIndex) === true &&
         destinationCommitted;
@@ -410,15 +436,19 @@ function analyzeParsed(
           bytesToHex(actual.witnessUtxo.script) !== expected.scriptPubKey)) {
       violations.push({ code: 'prevout_mismatch', inputIndex: index });
     }
-    const kind = scriptKind(expected.scriptPubKey);
+    const kind = providerInputScriptKind(expected.scriptPubKey);
     const providerKind = context.kind === 'provider_psbt' || context.kind === 'provider_transfer' ||
       context.kind === 'provider_ordinal_transfer' || context.kind === 'marketplace_psbt' ||
       context.kind === 'community_vault_acquisition' || context.kind === 'community_vault_sale';
     const declaredExternal = providerKind && expected.ownership === 'external' && expected.derivation === null;
     const invalidExternalDeclaration = expected.ownership === 'external' && !declaredExternal;
-    const verifiedMarketplaceScriptPath = context.kind === 'marketplace_psbt' &&
-      context.marketplace?.allowTaprootScriptPathInputIndexes.includes(index) === true &&
-      Boolean(actual.tapLeafScript?.length) && expected.ownership === 'wallet' && expected.derivation !== null;
+    const verifiedMarketplaceScriptPath =
+      ((context.marketplace?.allowTaprootScriptPathInputIndexes.includes(index) === true ||
+        context.providerPolicy?.allowTaprootScriptPathInputIndexes?.includes(index) === true) &&
+        Boolean(actual.tapLeafScript?.length)) ||
+      ((context.marketplace?.allowTaprootTreeKeyPathInputIndexes?.includes(index) === true ||
+        context.providerPolicy?.allowTaprootTreeKeyPathInputIndexes?.includes(index) === true) &&
+        !actual.tapLeafScript?.length) ? expected.ownership === 'wallet' && expected.derivation !== null : false;
     const ownership: TransactionAnalysisInput['ownership'] = declaredExternal
       ? 'external'
       : verifiedMarketplaceScriptPath
@@ -433,19 +463,23 @@ function analyzeParsed(
     if (expected.classification.classificationRevision !== context.source.classificationRevision) {
       violations.push({ code: 'classification_revision_mismatch', inputIndex: index });
     }
-    const rawInfo = serialized === 'raw'
+    const rawInfo = serialized === 'raw' && (kind === 'p2wpkh' || kind === 'p2tr')
       ? rawSighash(tx, index, kind)
-      : { raw: actual.sighashType ?? -1, scriptPath: Boolean(actual.tapLeafScript?.length) };
+      : { raw: actual.sighashType ?? expected.sighash, scriptPath: Boolean(actual.tapLeafScript?.length) };
     const sighash = decodeSighash(rawInfo.raw, index, tx.outputsLength);
     const marketplaceAllowed = context.marketplace?.allowedSighashesByInput[index];
+    const providerAllowed = context.providerPolicy?.allowedSighashesByInput[index];
     const allowed = marketplaceAllowed
       ? marketplaceAllowed.includes(rawInfo.raw)
+      : providerAllowed
+        ? providerAllowed.includes(rawInfo.raw)
       : ownership === 'external'
-        ? [0, 1, 0x81, 0x83].includes(rawInfo.raw)
+        ? sighash.validEncoding
         : kind === 'p2wpkh' ? rawInfo.raw === 1 : rawInfo.raw === 0 || rawInfo.raw === 1;
     if (!sighash.validEncoding || !allowed) violations.push({ code: 'unsupported_sighash', inputIndex: index });
     if (rawInfo.scriptPath && ownership !== 'external' &&
-        !context.marketplace?.allowTaprootScriptPathInputIndexes.includes(index)) {
+        !context.marketplace?.allowTaprootScriptPathInputIndexes.includes(index) &&
+        !context.providerPolicy?.allowTaprootScriptPathInputIndexes?.includes(index)) {
       violations.push({ code: 'unsupported_taproot_script_path', inputIndex: index });
     }
     inputs.push({
@@ -482,7 +516,7 @@ function analyzeParsed(
       if (ownership !== 'wallet') violations.push({ code: 'change_ownership_mismatch', outputIndex: index });
     }
     const address = outputAddress(tx, index, context.network);
-    if (expected && (address === null || address !== expected.address)) {
+    if (expected && expected.address !== null && (address === null || address !== expected.address)) {
       violations.push({ code: 'output_mismatch', outputIndex: index });
     }
     outputs.push({
@@ -507,7 +541,10 @@ function analyzeParsed(
   const batchProtected = (context.kind === 'ordinal_batch_transfer' ||
     context.kind === 'ordinal_postage_manage') && protectedInputIndexes.length > 0;
   if (protectedInputIndexes.length > 0 && !rescueProtected && !batchProtected) {
-    const permitted = new Set(context.marketplace?.permittedProtectedInputIndexes ?? []);
+    const permitted = new Set([
+      ...(context.marketplace?.permittedProtectedInputIndexes ?? []),
+      ...(context.providerPolicy?.permittedProtectedInputIndexes ?? []),
+    ]);
     for (const inputIndex of protectedInputIndexes) {
       const protectedInput = context.inputs[inputIndex]!;
       const externalPurchase = context.kind === 'provider_psbt' && protectedInput.ownership === 'external' &&
@@ -656,12 +693,20 @@ function analyzeParsed(
     ? context.marketplace.commitment.walletFeeExposureSats
     : aggregateFeeSats;
   if (context.marketplace?.commitment.mode !== 'partial' &&
-      (feeSats !== context.feeSats || feeSats <= 0n)) violations.push({ code: 'fee_mismatch' });
+      (feeSats !== context.feeSats || feeSats < 0n ||
+        (feeSats === 0n && context.providerPolicy?.deferredZeroFee !== true))) {
+    violations.push({ code: 'fee_mismatch' });
+  }
   if (context.marketplace?.commitment.mode === 'partial' && feeSats !== context.feeSats) {
     violations.push({ code: 'fee_mismatch' });
   }
-  const vsize = estimateVsize(context.inputs.map((input) => input.scriptPubKey), outputs.map((output) => output.scriptPubKey));
-  if (vsize !== context.vsize) violations.push({ code: 'vsize_mismatch' });
+  let vsize: bigint | null = null;
+  try {
+    vsize = estimateVsize(context.inputs.map((input) => input.scriptPubKey), outputs.map((output) => output.scriptPubKey));
+  } catch {
+    vsize = null;
+  }
+  if (context.vsize !== null && vsize !== context.vsize) violations.push({ code: 'vsize_mismatch' });
   if (feeSats > 100_000n) warnings.push({ code: 'high_absolute_fee' });
   const sent = context.outputs.filter((output) => output.role === 'recipient' || output.role === 'postage')
     .reduce((sum, output) => sum + output.valueSats, 0n);
@@ -680,7 +725,8 @@ function analyzeParsed(
   if (!postageIsNotPrincipal && sent > 0n && feeSats * 10n > sent) {
     warnings.push({ code: 'high_relative_fee' });
   }
-  if (feeSats > (context.feeRateSatPerKvB * vsize + 999n) / 1000n) warnings.push({ code: 'fee_above_target' });
+  if (context.feeRateSatPerKvB !== null && vsize !== null &&
+      feeSats > (context.feeRateSatPerKvB * vsize + 999n) / 1000n) warnings.push({ code: 'fee_above_target' });
   const sequences = inputs.map((input) => input.sequence);
   const replaceable = sequences.some((sequence) => sequence < 0xfffffffe);
   if (replaceable !== context.rbf) violations.push({ code: 'rbf_mismatch' });
@@ -730,7 +776,9 @@ function analyzeParsed(
 function analyze(hex: string, context: TransactionAnalysisContext, serialized: 'psbt' | 'raw'): AnalyzeResult {
   try {
     const bytes = hexToBytes(hex);
-    const tx = serialized === 'psbt' ? Transaction.fromPSBT(bytes, { lowR: true }) : Transaction.fromRaw(bytes);
+    const tx = serialized === 'psbt'
+      ? Transaction.fromPSBT(bytes, { lowR: true, allowUnknownInputs: true, allowUnknownOutputs: true })
+      : Transaction.fromRaw(bytes);
     const analysis = analyzeParsed(tx, context, serialized);
     return { ok: true, analysis, analysisHash: hashAnalysis(analysis) };
   } catch {

@@ -11,6 +11,7 @@ import { inspectMarketplacePsbt, resolveMarketplaceRequest } from '../../src/dom
 import { analyzeMarketplaceCommitment } from '../../src/domain/marketplaces/commitment';
 import {
   ORDNET_SALE_PUBLIC_KEY,
+  verifyOrdnetSaleKeyPath,
   verifyOrdnetSaleScriptPath,
 } from '../../src/domain/marketplaces/ordnet-script-path';
 import type { MarketplaceContext } from '../../src/domain/marketplaces/types';
@@ -286,6 +287,27 @@ describe('compile-time marketplace registry', () => {
     });
   });
 
+  it('does not combine guarantees from independently usable flexible signatures', () => {
+    const tx = new Transaction({ lowR: true });
+    for (let index = 0; index < 2; index += 1) {
+      tx.addInput({
+        txid: `${index + 1}`.repeat(64), index: 0, sighashType: SigHash.SINGLE_ANYONECANPAY,
+        witnessUtxo: { script: hexToBytes(`0014${'22'.repeat(20)}`), amount: 10_000n },
+      });
+      tx.addOutput({ script: hexToBytes(`0014${`${index + 3}`.repeat(40)}`), amount: 10_000n });
+    }
+    expect(analyzeMarketplaceCommitment({
+      psbtBase64: bytesToBase64(tx.toPSBT()),
+      network: 'mainnet',
+      context: { ...context, economics: undefined },
+      selectedInputIndexes: [0, 1],
+    })).toMatchObject({
+      mode: 'partial',
+      guaranteedOutputIndexes: [],
+      guaranteedProceedsSats: 0n,
+    });
+  });
+
   it('verifies the exact ord.net control block, pinned key, output key, and multi_a leaf', () => {
     const seed = mnemonicToSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
     const account = deriveAccountNode(seed, 'ordinals', 'mainnet', 0);
@@ -308,6 +330,25 @@ describe('compile-time marketplace registry', () => {
       disableTweakSigner: true,
     });
     expect(() => verifyOrdnetSaleScriptPath(tx, 0, '66'.repeat(32))).toThrow(/control block/u);
+
+    const recovery = new Transaction({ lowR: true });
+    recovery.addInput({
+      txid: '44'.repeat(32), index: 0, sighashType: SigHash.ALL_ANYONECANPAY,
+      witnessUtxo: { script: passthrough.script, amount: 10_000n },
+      tapInternalKey: passthrough.tapInternalKey,
+      tapMerkleRoot: passthrough.tapMerkleRoot,
+    });
+    recovery.addOutput({ script: hexToBytes(`5120${seller}`), amount: 9_000n });
+    expect(verifyOrdnetSaleKeyPath(recovery, 0, seller)).toMatchObject({
+      sellerPublicKey: seller,
+      ordnetPublicKey: ORDNET_SALE_PUBLIC_KEY,
+    });
+    const wrongRoot = Transaction.fromPSBT(recovery.toPSBT(), { lowR: true });
+    wrongRoot.updateInput(0, { tapMerkleRoot: hexToBytes('77'.repeat(32)) }, true);
+    expect(() => verifyOrdnetSaleKeyPath(wrongRoot, 0, seller)).toThrow(/pinned template/u);
+    const scriptPathRecovery = Transaction.fromPSBT(recovery.toPSBT(), { lowR: true });
+    scriptPathRecovery.updateInput(0, { tapLeafScript: passthrough.tapLeafScript! }, true);
+    expect(() => verifyOrdnetSaleKeyPath(scriptPathRecovery, 0, seller)).toThrow(/pinned template/u);
   });
 
   it('invalidates ord.net 409s, changed handles, and out-of-order sequential state', () => {

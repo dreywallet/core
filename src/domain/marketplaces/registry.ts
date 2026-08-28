@@ -12,6 +12,7 @@ export interface MarketplaceStepRule {
   step: number;
   allowedSighashes: readonly number[];
   allowTaprootScriptPath: boolean;
+  allowTaprootTreeKeyPath: boolean;
   requiresCorrespondingOutput: boolean;
   mutationEnvelope: 'signature_fields_only';
 }
@@ -49,11 +50,13 @@ function step(
   index: number,
   allowedSighashes: readonly number[],
   allowTaprootScriptPath = false,
+  allowTaprootTreeKeyPath = false,
 ): MarketplaceStepRule {
   return {
     step: index,
     allowedSighashes,
     allowTaprootScriptPath,
+    allowTaprootTreeKeyPath,
     requiresCorrespondingOutput: allowedSighashes.includes(0x83),
     mutationEnvelope: 'signature_fields_only',
   };

@@ -3,10 +3,11 @@ import { SigHash, Transaction } from '@scure/btc-signer';
 import { mnemonicToSeed } from '../../src/domain/keys/mnemonic';
 import { deriveAccountNode, deriveAddress } from '../../src/domain/keys/derivation';
 import { scriptPubKeyHex } from '../../src/domain/keys/script-hash';
-import { bytesToBase64, bytesToHex } from '../../src/domain/vault/encoding';
+import { base64ToBytes, bytesToBase64, bytesToHex, hexToBytes } from '../../src/domain/vault/encoding';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
 import {
   bindProviderPsbtPlanPreviews,
+  assertProviderPsbtPlan,
   createProviderPsbtPlan,
   partitionOrdinalSatFlow,
   providerPsbtOutpoints,
@@ -126,6 +127,7 @@ function fixture(primaryClass: UtxoClassification['primaryClass'] = 'cardinal_cl
       classification('11'.repeat(32), 0, '50000', walletScript, 'cardinal_clean'),
     ],
     outputScript,
+    walletAddress: wallet.address,
     recipientAddress: recipient.address,
     walletInputs: [{
       outpoint: `${'11'.repeat(32)}:0`,
@@ -135,7 +137,93 @@ function fixture(primaryClass: UtxoClassification['primaryClass'] = 'cardinal_cl
   };
 }
 
+function createFixturePlan(
+  value: ReturnType<typeof fixture>,
+  overrides: Partial<Parameters<typeof createProviderPsbtPlan>[0]> = {},
+) {
+  return createProviderPsbtPlan({
+    ...value,
+    binding,
+    network: 'signet',
+    vaultId: 'vault-1',
+    sessionId: binding.requestNonce,
+    account: 0,
+    source,
+    broadcast: false,
+    planId: 'provider-policy-fixture',
+    now: 1_800_000_000_000,
+    ...overrides,
+  });
+}
+
 describe('provider PSBT analysis binding', () => {
+  it('allows only fully committed non-broadcast zero-fee requests with every wallet input selected', () => {
+    const f = fixture();
+    const zeroFeePsbt = (outputAmount: bigint, sighash = SigHash.ALL): string => {
+      const tx = Transaction.fromPSBT(base64ToBytes(f.psbtBase64), { lowR: true });
+      tx.updateInput(1, { sighashType: sighash }, true);
+      tx.updateOutput(0, { amount: outputAmount }, true);
+      return bytesToBase64(tx.toPSBT());
+    };
+    const batchBinding = { ...binding, providerMethod: 'signMultipleTransactions' as const };
+    const plan = createFixturePlan(f, {
+      psbtBase64: zeroFeePsbt(80_000n),
+      binding: batchBinding,
+      selectedInputIndexes: [1],
+    });
+    expect(plan.deferredZeroFee).toBe(true);
+    expect(plan.feeSats).toBe(0n);
+    expect(plan.analysis.hardViolations).toEqual([]);
+    const mutated = structuredClone(plan);
+    mutated.deferredZeroFee = false;
+    expect(() => assertProviderPsbtPlan(mutated)).toThrow(/mutated/u);
+
+    const singlePlan = createFixturePlan(f, {
+      psbtBase64: zeroFeePsbt(80_000n), selectedInputIndexes: [1],
+    });
+    expect(singlePlan.deferredZeroFee).toBe(true);
+    const signedSingle = signProviderPsbtPlan({
+      plan: singlePlan,
+      seed,
+      requestedInputIndexes: [1],
+      random: (length) => new Uint8Array(length).fill(9),
+    });
+    const signedSinglePsbt = Transaction.fromPSBT(base64ToBytes(signedSingle.psbtBase64), { lowR: true });
+    expect(signedSinglePsbt.getInput(0).partialSig).toBeUndefined();
+    expect(signedSinglePsbt.getInput(1).partialSig).toHaveLength(1);
+    expect(signedSinglePsbt.getOutput(0).amount).toBe(80_000n);
+    expect(() => createFixturePlan(f, {
+      psbtBase64: zeroFeePsbt(80_000n), binding: batchBinding, selectedInputIndexes: [1], broadcast: true,
+    })).toThrow(/fee is not positive/u);
+    expect(() => createFixturePlan(f, {
+      psbtBase64: zeroFeePsbt(80_000n, SigHash.ALL_ANYONECANPAY),
+      binding: batchBinding, selectedInputIndexes: [1],
+    })).toThrow(/fee is not positive/u);
+    expect(() => createFixturePlan(f, {
+      psbtBase64: zeroFeePsbt(80_001n), binding: batchBinding, selectedInputIndexes: [1],
+    })).toThrow(/fee is not positive/u);
+
+    const hiddenWallet = structuredClone(f);
+    const hiddenTx = Transaction.fromPSBT(base64ToBytes(f.psbtBase64), { lowR: true });
+    hiddenTx.updateInput(0, {
+      witnessUtxo: {
+        amount: 30_000n,
+        script: hexToBytes(hiddenWallet.classifications[1]!.scriptPubKey),
+      },
+    }, true);
+    hiddenTx.updateInput(1, { sighashType: SigHash.ALL }, true);
+    hiddenTx.updateOutput(0, { amount: 80_000n }, true);
+    hiddenWallet.psbtBase64 = bytesToBase64(hiddenTx.toPSBT());
+    hiddenWallet.classifications[0]!.scriptPubKey = hiddenWallet.classifications[1]!.scriptPubKey;
+    hiddenWallet.walletInputs.push({
+      outpoint: `${'22'.repeat(32)}:1`,
+      derivation: { ...hiddenWallet.walletInputs[0]!.derivation },
+    });
+    expect(() => createFixturePlan(hiddenWallet, {
+      binding: batchBinding, selectedInputIndexes: [1],
+    })).toThrow(/fee is not positive/u);
+  });
+
   it('partitions co-located inscriptions by FIFO position and rejects inseparable postage', () => {
     expect(partitionOrdinalSatFlow(50_000n, [
       { inscriptionId: 'other', inputOffset: 0n, minimumOutputSats: 330n, target: false },
@@ -239,7 +327,7 @@ describe('provider PSBT analysis binding', () => {
       .toThrow(/must return to the active account/u);
   });
 
-  it('rejects an OP_RETURN output before a provider PSBT can reach signing', () => {
+  it('accepts a zero-value OP_RETURN output and rejects a material one', () => {
     const f = fixture();
     const tx = Transaction.fromPSBT(
       Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')),
@@ -250,10 +338,7 @@ describe('provider PSBT analysis binding', () => {
       amount: 0n,
     });
 
-    // @scure currently throws while decoding the output address; if that
-    // upstream behavior ever becomes permissive, Drey's own non-address guard
-    // immediately after it must keep this assertion fail-closed.
-    expect(() => createProviderPsbtPlan({
+    const plan = createProviderPsbtPlan({
       ...f,
       psbtBase64: bytesToBase64(tx.toPSBT()),
       binding,
@@ -265,7 +350,223 @@ describe('provider PSBT analysis binding', () => {
       broadcast: false,
       planId: 'op-return-output',
       now: 1_800_000_000_000,
-    })).toThrow();
+    });
+    expect(plan.outputs.at(-1)).toMatchObject({
+      address: null,
+      role: 'data',
+      scriptType: 'op_return',
+      valueSats: 0n,
+    });
+
+    const material = Transaction.fromPSBT(tx.toPSBT(), { allowUnknownOutputs: true });
+    material.updateOutput(material.outputsLength - 1, { amount: 1n });
+    expect(() => createProviderPsbtPlan({
+      ...f,
+      psbtBase64: bytesToBase64(material.toPSBT()),
+      binding,
+      network: 'signet',
+      vaultId: 'vault-1',
+      sessionId: binding.requestNonce,
+      account: 0,
+      source,
+      broadcast: false,
+      planId: 'material-op-return-output',
+      now: 1_800_000_000_000,
+    })).toThrow(/OP_RETURN output must have zero value/u);
+  });
+
+  it('allows safe flexible sighashes and explains exactly what remains changeable', () => {
+    const f = fixture();
+    const singleTx = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')));
+    singleTx.updateInput(1, { sighashType: SigHash.SINGLE });
+    singleTx.addOutput({ script: Uint8Array.from(Buffer.from(f.outputScript, 'hex')), amount: 1_000n });
+    const single = createFixturePlan(f, {
+      psbtBase64: bytesToBase64(singleTx.toPSBT()),
+      planId: 'single',
+    });
+    expect(single.approvalExplanation).toMatchObject({
+      presentation: 'flexible',
+      commitments: { inputs: 'fixed', outputs: 'changeable', fee: 'changeable' },
+    });
+    expect(single.approvalExplanation?.outputs.map((output) => output.guaranteed)).toEqual([false, true]);
+    const singleSigned = signProviderPsbtPlan({
+      plan: single,
+      seed,
+      requestedInputIndexes: [1],
+      random: (length) => new Uint8Array(length).fill(7),
+    });
+    const signedSingle = Transaction.fromPSBT(Uint8Array.from(Buffer.from(singleSigned.psbtBase64, 'base64')));
+    expect(signedSingle.getInput(1).partialSig?.[0]?.[1].at(-1)).toBe(SigHash.SINGLE);
+
+    const allAcpTx = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')));
+    allAcpTx.updateInput(1, { sighashType: SigHash.ALL_ANYONECANPAY });
+    const allAcp = createFixturePlan(f, {
+      psbtBase64: bytesToBase64(allAcpTx.toPSBT()),
+      planId: 'all-acp',
+    });
+    expect(allAcp.approvalExplanation).toMatchObject({
+      presentation: 'flexible',
+      commitments: { inputs: 'changeable', outputs: 'fixed', fee: 'changeable' },
+    });
+
+    const singleAcpTx = Transaction.fromPSBT(singleTx.toPSBT());
+    singleAcpTx.updateInput(1, { sighashType: SigHash.SINGLE_ANYONECANPAY });
+    const singleAcp = createFixturePlan(f, {
+      psbtBase64: bytesToBase64(singleAcpTx.toPSBT()),
+      planId: 'single-acp',
+    });
+    expect(singleAcp.approvalExplanation).toMatchObject({
+      presentation: 'flexible',
+      commitments: { inputs: 'changeable', outputs: 'changeable', fee: 'changeable' },
+    });
+  });
+
+  it('hard-blocks destination-free, reserved, and incomplete SINGLE sighashes before signing', () => {
+    const f = fixture();
+    for (const [sighash, message] of [
+      [SigHash.NONE, /does not commit to a destination/u],
+      [SigHash.NONE_ANYONECANPAY, /does not commit to a destination/u],
+      [SigHash.DEFAULT_ANYONECANPAY, /invalid or reserved sighash/u],
+    ] as const) {
+      const tx = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')));
+      tx.updateInput(1, { sighashType: sighash });
+      expect(() => createFixturePlan(f, {
+        psbtBase64: bytesToBase64(tx.toPSBT()),
+        planId: `blocked-${sighash}`,
+      })).toThrow(message);
+    }
+    const single = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')));
+    single.updateInput(1, { sighashType: SigHash.SINGLE });
+    expect(() => createFixturePlan(f, {
+      psbtBase64: bytesToBase64(single.toPSBT()),
+      planId: 'blocked-single',
+    })).toThrow(/SINGLE without a corresponding output/u);
+  });
+
+  it('validates signInputs address-to-index ownership instead of flattening indexes', () => {
+    const f = fixture();
+    expect(createFixturePlan(f, {
+      signInputBindings: [{ address: f.walletAddress, inputIndexes: [1] }],
+      planId: 'correct-address-binding',
+    }).selectedInputIndexes).toEqual([1]);
+    expect(() => createFixturePlan(f, {
+      signInputBindings: [{ address: f.recipientAddress, inputIndexes: [1] }],
+      planId: 'wrong-address-binding',
+    })).toThrow(/address does not own input 1/u);
+  });
+
+  it('accepts classified external standard or unknown scripts without claiming a reliable fee rate', () => {
+    const f = fixture();
+    const scripts = [
+      ['p2pkh', `76a914${'44'.repeat(20)}88ac`],
+      ['p2sh', `a914${'44'.repeat(20)}87`],
+      ['p2wpkh', `0014${'44'.repeat(20)}`],
+      ['p2wsh', `0020${'44'.repeat(32)}`],
+      ['p2tr', `5120${'44'.repeat(32)}`],
+      ['unknown', '51'],
+    ] as const;
+    for (const [scriptType, scriptPubKey] of scripts) {
+      const tx = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')), {
+        allowUnknownInputs: true,
+      });
+      tx.updateInput(0, {
+        witnessUtxo: { script: Uint8Array.from(Buffer.from(scriptPubKey, 'hex')), amount: 30_000n },
+      }, true);
+      const classifications = structuredClone(f.classifications);
+      classifications[0]!.scriptPubKey = scriptPubKey;
+      const plan = createFixturePlan(f, {
+        psbtBase64: bytesToBase64(tx.toPSBT()),
+        classifications,
+        planId: `external-${scriptType}`,
+      });
+      expect(plan.inputs[0]?.scriptType).toBe(scriptType);
+      if (scriptType === 'p2wpkh' || scriptType === 'p2tr') {
+        expect(plan.vsize).not.toBeNull();
+      } else {
+        expect(plan.vsize).toBeNull();
+        expect(plan.approvalExplanation?.commitments.feeRate).toBe('unavailable');
+      }
+      expect(signProviderPsbtPlan({
+        plan,
+        seed,
+        requestedInputIndexes: [1],
+        random: (length) => new Uint8Array(length).fill(7),
+      }).psbtBase64).toBeTruthy();
+    }
+  });
+
+  it('describes every standard provider output and blocks an unexplained material script', () => {
+    const f = fixture();
+    const ordinalAccount = deriveAccountNode(seed, 'ordinals', 'signet', 0);
+    const taproot = deriveAddress(ordinalAccount, 'ordinals', 'signet', 0, 7);
+    ordinalAccount.wipePrivateData();
+    const scripts = [
+      ['p2pkh', `76a914${'55'.repeat(20)}88ac`],
+      ['p2sh', `a914${'55'.repeat(20)}87`],
+      ['p2wpkh', `0014${'55'.repeat(20)}`],
+      ['p2wsh', `0020${'55'.repeat(32)}`],
+      ['p2tr', scriptPubKeyHex(taproot.publicKeyHex, 'ordinals', 'signet')],
+    ] as const;
+    for (const [scriptType, scriptPubKey] of scripts) {
+      const tx = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')));
+      tx.updateOutput(0, { script: Uint8Array.from(Buffer.from(scriptPubKey, 'hex')) });
+      expect(createFixturePlan(f, {
+        psbtBase64: bytesToBase64(tx.toPSBT()),
+        planId: `output-${scriptType}`,
+      }).outputs[0]?.scriptType).toBe(scriptType);
+    }
+    const unknown = Transaction.fromPSBT(Uint8Array.from(Buffer.from(f.psbtBase64, 'base64')), {
+      allowUnknownOutputs: true,
+    });
+    unknown.updateOutput(0, { script: Uint8Array.from([0x51]) }, true);
+    expect(() => createFixturePlan(f, {
+      psbtBase64: bytesToBase64(unknown.toPSBT()),
+      planId: 'unknown-material-output',
+    })).toThrow(/cannot be explained safely/u);
+  });
+
+  it('preserves PSBTv0/v2 and proprietary fields while adding only the selected signature', () => {
+    const f = fixture();
+    for (const version of [0, 2] as const) {
+      const tx = new Transaction({ lowR: true, PSBTVersion: version });
+      for (let index = 0; index < f.classifications.length; index += 1) {
+        const classification = f.classifications[index]!;
+        tx.addInput({
+          txid: classification.txid,
+          index: classification.vout,
+          sequence: index === 0 ? 0xffffffff : 0xfffffffd,
+          witnessUtxo: {
+            script: Uint8Array.from(Buffer.from(classification.scriptPubKey, 'hex')),
+            amount: BigInt(classification.valueSats),
+          },
+          ...(index === 1 ? {
+            proprietary: [[
+              new Uint8Array([0x64, 0x72, 0x65, 0x79, 0x05]),
+              new Uint8Array([0xaa, 0xbb]),
+            ]] as [Uint8Array, Uint8Array][],
+          } : {}),
+        });
+      }
+      tx.addOutput({ script: Uint8Array.from(Buffer.from(f.outputScript, 'hex')), amount: 78_000n });
+      const psbt = tx.toPSBT();
+      const plan = createFixturePlan(f, {
+        psbtBase64: bytesToBase64(psbt),
+        planId: `psbt-v${version}`,
+      });
+      expect(plan.psbtVersion).toBe(version);
+      expect(plan.psbtHex).toBe(bytesToHex(psbt));
+      const signed = signProviderPsbtPlan({
+        plan,
+        seed,
+        requestedInputIndexes: [1],
+        random: (length) => new Uint8Array(length).fill(7),
+      });
+      const reparsed = Transaction.fromPSBT(Uint8Array.from(Buffer.from(signed.psbtBase64, 'base64')));
+      expect(reparsed.opts.PSBTVersion).toBe(version);
+      expect(reparsed.getInput(1).proprietary).toEqual(tx.getInput(1).proprietary);
+      expect(reparsed.getInput(0).partialSig).toBeUndefined();
+      expect(reparsed.getInput(1).partialSig).toHaveLength(1);
+    }
   });
 
   it('rejects a protected foreign input through M7H hard violations', () => {
@@ -499,7 +800,7 @@ describe('provider PSBT analysis binding', () => {
       ...f, psbtBase64: bytesToBase64(unsafe.toPSBT()), binding, network: 'signet',
       vaultId: 'vault-1', sessionId: binding.requestNonce, account: 0, source,
       broadcast: false, planId: 'unsafe-sighash', now: 1_800_000_000_000,
-    })).toThrow(/unsupported provider sighash/u);
+    })).toThrow(/SINGLE without a corresponding output/u);
   });
 
   it('rejects degraded classifications and non-overridable provider fee anomalies', () => {

@@ -148,6 +148,22 @@ describe('provider operation registry', () => {
       signInputs: { tb1q00000000: [PROVIDER_MAX_SIGN_INPUTS] },
     }).success).toBe(false);
     expect(psbt.safeParse({ psbt: 'cHNidP8=', signInputs: {} }).success).toBe(false);
+    expect(psbt.safeParse({
+      psbt: 'cHNidP8=',
+      inputsToSign: [{ address: 'tb1q00000000', signingIndexes: [0], sigHash: 1 }],
+    }).success).toBe(true);
+    expect(psbt.safeParse({
+      psbt: 'cHNidP8=',
+      signInputs: { tb1q00000000: [0] },
+      inputsToSign: [{ address: 'tb1q00000000', signingIndexes: [0], sigHash: 1 }],
+    }).success).toBe(false);
+    expect(psbt.safeParse({
+      psbt: 'cHNidP8=',
+      inputsToSign: [
+        { address: 'tb1q00000000', signingIndexes: [0], sigHash: 1 },
+        { address: 'tb1p00000000', signingIndexes: [0], sigHash: 1 },
+      ],
+    }).success).toBe(false);
   });
 
   it('implements a bounded BIP322-only official multiple-message contract', () => {
@@ -210,6 +226,22 @@ describe('provider operation registry', () => {
     }).success).toBe(false);
     expect(request.safeParse({
       network: { type: 'Signet' }, message: 'x', psbts: [{ ...item, broadcast: true }],
+    }).success).toBe(false);
+    const selectedItem = (count: number) => ({
+      psbtBase64: 'cHNidP8=',
+      inputsToSign: [{
+        address: 'tb1q00000000',
+        signingIndexes: Array.from({ length: count }, (_value, index) => index),
+        sigHash: 1,
+      }],
+    });
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'x',
+      psbts: [selectedItem(200), selectedItem(200), selectedItem(100)],
+    }).success).toBe(true);
+    expect(request.safeParse({
+      network: { type: 'Signet' }, message: 'x',
+      psbts: [selectedItem(200), selectedItem(200), selectedItem(101)],
     }).success).toBe(false);
     expect(request.safeParse({
       network: { type: 'Signet' }, message: 'x', psbts: [{

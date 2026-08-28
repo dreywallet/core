@@ -11,7 +11,9 @@ import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
 import {
   PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS,
+  PROVIDER_MAX_PSBT_BATCH_SELECTED_INPUTS,
   PROVIDER_MAX_PSBT_BATCH_ITEMS,
+  PROVIDER_MAX_PSBT_INPUT_SELECTIONS,
   PROVIDER_MAX_PSBT_INPUTS,
 } from '../domain/transactions/provider-psbt-limits';
 import {
@@ -334,10 +336,18 @@ const signInputsSchema = z
     }
   });
 
-const signPsbtParamsSchema = z
+export const satsConnectInputToSignSchema = z.object({
+  address: addressSchema,
+  signingIndexes: z.array(z.number().int().nonnegative().max(PROVIDER_MAX_SIGN_INPUTS - 1))
+    .min(1).max(PROVIDER_MAX_SIGN_INPUTS),
+  sigHash: z.union([z.literal(0), z.literal(1), z.literal(129), z.literal(131)]).optional(),
+}).strict();
+
+export const signPsbtParamsSchema = z
   .object({
     psbt: base64PsbtSchema,
     signInputs: signInputsSchema.optional(),
+    inputsToSign: z.array(satsConnectInputToSignSchema).min(1).max(PROVIDER_MAX_PSBT_INPUT_SELECTIONS).optional(),
     broadcast: z.boolean().optional(),
     marketplaceContext: marketplaceContextSchema.optional(),
     communityVaultAcquisitionContext: communityVaultAcquisitionProviderContextSchema.optional(),
@@ -350,6 +360,26 @@ const signPsbtParamsSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.signInputs !== undefined && value.inputsToSign !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'signInputs and inputsToSign are mutually exclusive',
+      });
+    }
+    const seenAddresses = new Set<string>();
+    const seenIndexes = new Set<number>();
+    for (const selection of value.inputsToSign ?? []) {
+      if (seenAddresses.has(selection.address)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'inputsToSign addresses must be unique' });
+      }
+      seenAddresses.add(selection.address);
+      for (const index of selection.signingIndexes) {
+        if (seenIndexes.has(index)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: 'inputsToSign indexes must be unique' });
+        }
+        seenIndexes.add(index);
+      }
+    }
     const contexts = [
       value.marketplaceContext,
       value.communityVaultAcquisitionContext,
@@ -375,6 +405,7 @@ const signPsbtParamsSchema = z
       });
     }
   });
+export type SignPsbtParams = z.input<typeof signPsbtParamsSchema>;
 
 const signPsbtResultSchema = z
   .object({
@@ -383,16 +414,13 @@ const signPsbtResultSchema = z
   })
   .strict();
 
-export const satsConnectInputToSignSchema = z.object({
-  address: addressSchema,
-  signingIndexes: z.array(z.number().int().nonnegative().max(PROVIDER_MAX_SIGN_INPUTS - 1))
-    .min(1).max(PROVIDER_MAX_SIGN_INPUTS),
-  sigHash: z.union([z.literal(0), z.literal(1), z.literal(129), z.literal(131)]).optional(),
-}).strict();
-
 const satsConnectMultiplePsbtSchema = z.object({
   psbtBase64: base64PsbtSchema,
-  inputsToSign: z.array(satsConnectInputToSignSchema).min(1).max(2).optional(),
+  inputsToSign: z.array(satsConnectInputToSignSchema).min(1).max(PROVIDER_MAX_PSBT_INPUT_SELECTIONS).optional(),
+  /** Adapter-labeled promise checked against the PSBT's real unsigned transaction id. */
+  expectedTxid: txidSchema.optional(),
+  /** Required by linked marketplace groups; inert unless compile-time template resolution recognizes it. */
+  marketplaceContext: marketplaceContextSchema.optional(),
 }).strict().superRefine((value, context) => {
   const seenAddresses = new Set<string>();
   const seenIndexes = new Set<number>();
@@ -429,10 +457,10 @@ export const signMultipleTransactionsParamsSchema = z.object({
   }
   const selected = value.psbts.reduce((total, item) => total +
     (item.inputsToSign?.reduce((count, selection) => count + selection.signingIndexes.length, 0) ?? 0), 0);
-  if (selected > PROVIDER_MAX_SIGN_INPUTS) {
+  if (selected > PROVIDER_MAX_PSBT_BATCH_SELECTED_INPUTS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `batch may select at most ${PROVIDER_MAX_SIGN_INPUTS} inputs`,
+      message: `batch may select at most ${PROVIDER_MAX_PSBT_BATCH_SELECTED_INPUTS} inputs`,
     });
   }
 });

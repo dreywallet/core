@@ -14,6 +14,12 @@ export interface MarketplaceCommitmentAnalysis {
   uncommittedDimensions: Array<'external_inputs' | 'non_corresponding_outputs'>;
 }
 
+type MarketplacePlanInput = Omit<PlanInput, 'sighash'> & { sighash: number };
+type MarketplacePlanOutput = Omit<PlanOutput, 'address' | 'role'> & {
+  address: string | null;
+  role: PlanOutput['role'] | 'data' | 'unknown';
+};
+
 function outputAddress(tx: Transaction, index: number, network: Network): string | null {
   const output = tx.getOutput(index);
   if (!output.script) return null;
@@ -30,7 +36,11 @@ export function analyzeMarketplaceCommitment(input: {
   context: MarketplaceContext;
   selectedInputIndexes: number[];
 }): MarketplaceCommitmentAnalysis {
-  const tx = Transaction.fromPSBT(base64ToBytes(input.psbtBase64), { lowR: true });
+  const tx = Transaction.fromPSBT(base64ToBytes(input.psbtBase64), {
+    lowR: true,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
   assertProviderPsbtItemCounts(tx);
   const selected = [...new Set(input.selectedInputIndexes)].sort((a, b) => a - b);
   if (selected.length === 0 || selected.some((index) => index < 0 || index >= tx.inputsLength)) {
@@ -38,43 +48,61 @@ export function analyzeMarketplaceCommitment(input: {
   }
   let guaranteedProceedsSats = 0n;
   let walletFeeExposureSats = 0n;
-  let allInputsCommitted = false;
-  let allOutputsCommitted = false;
-  const guaranteed = new Set<number>();
+  let allInputsCommitted = true;
+  let allOutputsCommitted = true;
+  let guaranteed: Set<number> | null = null;
   const payoutOutputs = new Set<number>();
   for (const index of selected) {
     const item = tx.getInput(index);
     const sighash = item.sighashType ?? (item.witnessUtxo?.script?.length === 22 ? SigHash.ALL : SigHash.DEFAULT);
     if (!item.witnessUtxo) throw new Error('selected marketplace input has no prevout');
-    if (sighash === SigHash.SINGLE_ANYONECANPAY) {
+    const committedBySignature = new Set<number>();
+    if (sighash === SigHash.SINGLE || sighash === SigHash.SINGLE_ANYONECANPAY) {
       const output = tx.getOutput(index);
       if (!output || output.amount === undefined) throw new Error('SINGLE has no corresponding output');
-      guaranteed.add(index);
+      committedBySignature.add(index);
       payoutOutputs.add(index);
       if (item.witnessUtxo.amount > output.amount) walletFeeExposureSats += item.witnessUtxo.amount - output.amount;
       if (input.context.economics?.payoutAddress &&
           outputAddress(tx, index, input.network) !== input.context.economics.payoutAddress) {
         throw new Error('seller payout address differs from approved economics');
       }
+      allOutputsCommitted = false;
+      if (sighash === SigHash.SINGLE_ANYONECANPAY) allInputsCommitted = false;
     } else if (sighash === SigHash.ALL_ANYONECANPAY) {
-      allOutputsCommitted = true;
-      for (let outputIndex = 0; outputIndex < tx.outputsLength; outputIndex += 1) guaranteed.add(outputIndex);
+      allInputsCommitted = false;
+      for (let outputIndex = 0; outputIndex < tx.outputsLength; outputIndex += 1) {
+        committedBySignature.add(outputIndex);
+      }
     } else if (sighash === SigHash.DEFAULT || sighash === SigHash.ALL) {
-      allInputsCommitted = true;
-      allOutputsCommitted = true;
-      for (let outputIndex = 0; outputIndex < tx.outputsLength; outputIndex += 1) guaranteed.add(outputIndex);
+      for (let outputIndex = 0; outputIndex < tx.outputsLength; outputIndex += 1) {
+        committedBySignature.add(outputIndex);
+      }
     } else {
       throw new Error('unsupported marketplace sighash');
+    }
+    if (guaranteed === null) {
+      guaranteed = new Set(committedBySignature);
+    } else {
+      // A counterparty can use any released signature independently. Count an
+      // output as guaranteed only when every selected signature commits it.
+      const intersection = new Set<number>();
+      for (const outputIndex of guaranteed) {
+        if (committedBySignature.has(outputIndex)) intersection.add(outputIndex);
+      }
+      guaranteed = intersection;
     }
   }
   if (allOutputsCommitted && input.context.economics?.payoutAddress) {
     for (let index = 0; index < tx.outputsLength; index += 1) {
       if (outputAddress(tx, index, input.network) === input.context.economics.payoutAddress) {
-        payoutOutputs.add(index);
+        if (guaranteed?.has(index)) payoutOutputs.add(index);
       }
     }
   }
-  for (const index of payoutOutputs) guaranteedProceedsSats += tx.getOutput(index).amount ?? 0n;
+  for (const index of payoutOutputs) {
+    if (guaranteed?.has(index)) guaranteedProceedsSats += tx.getOutput(index).amount ?? 0n;
+  }
   const expectedProceeds = input.context.economics?.sellerProceedsSats;
   if (expectedProceeds !== undefined && guaranteedProceedsSats < BigInt(expectedProceeds)) {
     throw new Error('seller proceeds are below the approved amount');
@@ -85,7 +113,8 @@ export function analyzeMarketplaceCommitment(input: {
   return {
     mode: uncommittedDimensions.length === 0 ? 'exact' : 'partial',
     selectedInputIndexes: selected,
-    guaranteedOutputIndexes: guaranteed.size === tx.outputsLength ? 'all' : [...guaranteed].sort((a, b) => a - b),
+    guaranteedOutputIndexes: guaranteed?.size === tx.outputsLength
+      ? 'all' : [...(guaranteed ?? [])].sort((a, b) => a - b),
     guaranteedProceedsSats,
     walletFeeExposureSats,
     uncommittedDimensions,
@@ -93,7 +122,7 @@ export function analyzeMarketplaceCommitment(input: {
 }
 
 export function assertMarketplaceWalletInputs(input: {
-  planInputs: readonly PlanInput[];
+  planInputs: readonly MarketplacePlanInput[];
   selectedInputIndexes: readonly number[];
   context: MarketplaceContext;
 }): void {
@@ -128,8 +157,8 @@ export function assertMarketplaceWalletInputs(input: {
 }
 
 export function assertMarketplaceBuyerPlan(input: {
-  planInputs: readonly PlanInput[];
-  outputs: readonly PlanOutput[];
+  planInputs: readonly MarketplacePlanInput[];
+  outputs: readonly MarketplacePlanOutput[];
   protectedSatFlow: readonly ProtectedSatFlow[];
   selectedInputIndexes: readonly number[];
   feeSats: bigint;
@@ -184,7 +213,11 @@ export function assertMarketplaceBuyerPlan(input: {
 }
 
 export function unsignedMarketplaceFingerprint(psbtBase64: string): string {
-  const tx = Transaction.fromPSBT(base64ToBytes(psbtBase64), { lowR: true });
+  const tx = Transaction.fromPSBT(base64ToBytes(psbtBase64), {
+    lowR: true,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
   assertProviderPsbtItemCounts(tx);
   return bytesToHex(tx.toPSBT());
 }

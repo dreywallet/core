@@ -11,6 +11,21 @@ export interface VerifiedOrdnetScriptPath {
   disableTweakSigner: true;
 }
 
+export interface VerifiedOrdnetKeyPath {
+  sellerPublicKey: string;
+  ordnetPublicKey: typeof ORDNET_SALE_PUBLIC_KEY;
+  merkleRoot: string;
+}
+
+function ordnetSaleOutput(sellerPublicKey: string) {
+  return p2tr(
+    hexToBytes(sellerPublicKey),
+    { script: p2tr_ns(2, [hexToBytes(sellerPublicKey), hexToBytes(ORDNET_SALE_PUBLIC_KEY)])[0]!.script },
+    NETWORK,
+    true,
+  );
+}
+
 /**
  * Verify tr(seller, multi_a(2,seller,ordnet)) from first principles using the
  * parsed control block and the pinned marketplace key. No page metadata is
@@ -31,12 +46,7 @@ export function verifyOrdnetSaleScriptPath(
       bytesToHex(controlBlock.internalKey) !== sellerPublicKey || scriptWithVersion.at(-1) !== 0xc0) {
     throw new Error('ord.net control block differs from the pinned template');
   }
-  const expected = p2tr(
-    hexToBytes(sellerPublicKey),
-    { script: p2tr_ns(2, [hexToBytes(sellerPublicKey), hexToBytes(ORDNET_SALE_PUBLIC_KEY)])[0]!.script },
-    NETWORK,
-    true,
-  );
+  const expected = ordnetSaleOutput(sellerPublicKey);
   if (bytesToHex(expected.script) !== bytesToHex(input.witnessUtxo.script) ||
       expected.tapLeafScript?.length !== 1 ||
       bytesToHex(expected.tapLeafScript[0]![1]) !== bytesToHex(scriptWithVersion)) {
@@ -47,5 +57,28 @@ export function verifyOrdnetSaleScriptPath(
     ordnetPublicKey: ORDNET_SALE_PUBLIC_KEY,
     leafVersion: 0xc0,
     disableTweakSigner: true,
+  };
+}
+
+/** Verify unilateral seller recovery from the same pinned sale output tree. */
+export function verifyOrdnetSaleKeyPath(
+  tx: Transaction,
+  inputIndex: number,
+  sellerPublicKey: string,
+): VerifiedOrdnetKeyPath {
+  if (!/^[0-9a-f]{64}$/u.test(sellerPublicKey)) throw new Error('invalid seller x-only public key');
+  const input = tx.getInput(inputIndex);
+  const expected = ordnetSaleOutput(sellerPublicKey);
+  if (!input.witnessUtxo?.script || input.tapLeafScript?.length ||
+      !input.tapInternalKey || !input.tapMerkleRoot || !expected.tapInternalKey || !expected.tapMerkleRoot ||
+      bytesToHex(input.tapInternalKey) !== sellerPublicKey ||
+      bytesToHex(input.tapMerkleRoot) !== bytesToHex(expected.tapMerkleRoot) ||
+      bytesToHex(input.witnessUtxo.script) !== bytesToHex(expected.script)) {
+    throw new Error('ord.net recovery key path differs from the pinned template');
+  }
+  return {
+    sellerPublicKey,
+    ordnetPublicKey: ORDNET_SALE_PUBLIC_KEY,
+    merkleRoot: bytesToHex(expected.tapMerkleRoot),
   };
 }

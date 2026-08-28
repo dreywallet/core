@@ -127,7 +127,7 @@ describe('independent provider PSBT batches', () => {
     const batch = create();
     expect(batch.items).toHaveLength(2);
     expect(batch.aggregate).toMatchObject({ inputs: 2, outputs: 2, feeExposureSats: 4_000n });
-    expect(batch.requiresAdvanced).toBe(true);
+    expect(batch.requiresAdvanced).toBe(false);
     const signed = await signProviderPsbtBatchPlan({
       plan: batch,
       seed,

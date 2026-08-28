@@ -1,12 +1,12 @@
-import { RawTx, SigHash, Transaction } from '@scure/btc-signer';
+import { p2tr, p2wpkh, RawTx, SigHash, Transaction } from '@scure/btc-signer';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import type { UtxoClassification } from '../gateway/contract';
 import { bitcoinNetwork, deriveAccountNode, type Network } from '../keys/derivation';
 import { scriptPubKeyHex } from '../keys/script-hash';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
 import { getCryptoProvider } from '../vault/crypto-provider';
-import { analyzePsbtHex, analyzeRawTransactionHex, type TransactionAnalysis } from './analysis';
-import { estimateVsize, scriptKind } from './fees';
+import { analyzePsbtHex, analyzeRawTransactionHex, decodeSighash, type TransactionAnalysis } from './analysis';
+import { estimateVsize, payableScriptKind, scriptKind } from './fees';
 import type { PlanDerivation, PlanInput, PlanOutput, TransactionPlan } from './plan';
 import type { InscriptionPreviewSet, StoredInscriptionPreviewSet } from './inscription-previews';
 import { approvalInscriptionItems, storedPreviewSet } from './inscription-previews';
@@ -19,8 +19,18 @@ import {
   type MarketplaceCommitmentAnalysis,
 } from '../marketplaces/commitment';
 import { templateForResolution } from '../marketplaces/resolver';
-import { verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
-import { assertProviderPsbtItemCounts } from './provider-psbt-limits';
+import { verifyOrdnetSaleKeyPath, verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
+import {
+  assertProviderPsbtItemCounts,
+  PROVIDER_MAX_PSBT_INPUT_SELECTIONS,
+  PROVIDER_MAX_PSBT_INPUTS,
+} from './provider-psbt-limits';
+import type { ProviderPsbtInputClassificationProvenanceV1 } from './provider-psbt-group-prepare';
+import {
+  assertProviderPsbtGroupPlan,
+  type ProviderPsbtGroupPlanV1,
+  type SignedProviderPsbtGroupV1,
+} from './provider-psbt-group-plan';
 import type { CommunityVaultAcquisitionProviderReviewV1 } from '../community-vault/acquisition-provider';
 import type {
   CommunityVaultSaleBuyerProviderReviewV1,
@@ -29,6 +39,12 @@ import type {
 import type {
   CommunityVaultPositionTransferProviderReviewV1,
 } from '../community-vault/position-transfer-provider';
+import {
+  createProviderPsbtApprovalExplanation,
+  type ProviderPsbtApprovalExplanationV1,
+  type ProviderPsbtInputScriptType,
+  type ProviderPsbtOutputScriptType,
+} from './provider-psbt-approval';
 export {
   partitionOrdinalSatFlow,
   type OrdinalPartition,
@@ -44,8 +60,40 @@ export interface ProviderAuthorityBinding {
   providerMethod: 'signPsbt' | 'signMultipleTransactions' | 'sendTransfer' | 'ord_sendInscriptions';
 }
 
-export interface ProviderPsbtPlanV3 {
-  version: 4;
+export type ProviderPsbtSighash = 0 | 1 | 3 | 129 | 131;
+
+export interface ProviderPsbtInput extends Omit<PlanInput, 'sighash'> {
+  sighash: ProviderPsbtSighash;
+  scriptType: ProviderPsbtInputScriptType;
+}
+
+export interface ProviderPsbtOutput extends Omit<PlanOutput, 'address' | 'role'> {
+  address: string | null;
+  role: PlanOutput['role'] | 'data' | 'unknown';
+  scriptType: ProviderPsbtOutputScriptType;
+}
+
+export type ProviderPsbtPolicyErrorCode =
+  | 'missing_prevout'
+  | 'invalid_sighash'
+  | 'sighash_none'
+  | 'single_missing_output'
+  | 'unsupported_wallet_script'
+  | 'unknown_output_script'
+  | 'sign_input_address_mismatch'
+  | 'unsafe_protected_asset'
+  | 'generic_listing_multiple_signatures'
+  | 'unsafe_fee_exposure';
+
+export class ProviderPsbtPolicyError extends Error {
+  constructor(readonly code: ProviderPsbtPolicyErrorCode, message: string) {
+    super(message);
+    this.name = 'ProviderPsbtPolicyError';
+  }
+}
+
+export interface ProviderPsbtPlanV5 {
+  version: 5;
   planId: string;
   createdAt: number;
   expiresAt: number;
@@ -58,6 +106,7 @@ export interface ProviderPsbtPlanV3 {
   kind: 'provider_psbt' | 'provider_transfer' | 'provider_ordinal_transfer' | 'marketplace_psbt' |
     'community_vault_acquisition' | 'community_vault_sale';
   provider: ProviderAuthorityBinding;
+  psbtVersion: 0 | 2;
   broadcast: boolean;
   requiresAdvanced: boolean;
   /** Exact input indexes approved for this provider request. */
@@ -67,27 +116,38 @@ export interface ProviderPsbtPlanV3 {
     selectedInputIndexes: number[];
     commitment: MarketplaceCommitmentAnalysis;
   };
-  inputs: PlanInput[];
-  outputs: PlanOutput[];
+  inputs: ProviderPsbtInput[];
+  outputs: ProviderPsbtOutput[];
   source: TransactionPlan['source'];
   feeSats: bigint;
-  vsize: bigint;
-  feeRateSatPerKvB: bigint;
+  /** Exact, non-broadcast zero-fee signing request surfaced for explicit review. */
+  deferredZeroFee: boolean;
+  vsize: bigint | null;
+  feeRateSatPerKvB: bigint | null;
   rbf: boolean;
   protectedSatFlow: TransactionPlan['protectedSatFlow'];
   psbtHex: string;
   psbtHash: string;
   analysis: TransactionAnalysis;
   analysisHash: string;
+  approvalExplanation: ProviderPsbtApprovalExplanationV1 | null;
   transactionCommitmentHash: string;
   inscriptionPreviews: StoredInscriptionPreviewSet | null;
   planHash: string;
+  /** Present only when prospective inputs were derived from a validated group graph. */
+  linkedGroup?: {
+    groupId: string;
+    nodeId: string;
+    preparationHash: string;
+    inputProvenance: ProviderPsbtInputClassificationProvenanceV1[];
+  };
   marketplace?: {
     context: MarketplaceContext;
     resolution: MarketplaceResolution;
     selectedInputIndexes: number[];
     commitment: MarketplaceCommitmentAnalysis;
     allowTaprootScriptPath: boolean;
+    allowTaprootTreeKeyPath: boolean;
   };
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
@@ -95,19 +155,31 @@ export interface ProviderPsbtPlanV3 {
   communityVaultPositionTransfer?: CommunityVaultPositionTransferProviderReviewV1;
 }
 
-/** Compatibility name for call sites; only version 4 is constructible. */
-export type ProviderPsbtPlanV4 = ProviderPsbtPlanV3;
+/** Compatibility names for call sites; only version 5 is constructible. */
+export type ProviderPsbtPlanV3 = ProviderPsbtPlanV5;
+export type ProviderPsbtPlanV4 = ProviderPsbtPlanV5;
 
-const liveProviderPreviews = new WeakMap<ProviderPsbtPlanV3, InscriptionPreviewSet>();
+const liveProviderPreviews = new WeakMap<ProviderPsbtPlanV5, InscriptionPreviewSet>();
 
 export interface WalletPsbtInput {
   outpoint: string;
   derivation: PlanDerivation;
 }
 
+export interface ProviderSignInputBinding {
+  address: string;
+  inputIndexes: number[];
+}
+
+export interface ProviderPsbtInputSelection {
+  address: string;
+  signingIndexes: number[];
+  sigHash?: ProviderPsbtSighash | undefined;
+}
+
 function inferExternalInscriptionFlows(
-  inputs: readonly PlanInput[],
-  outputs: readonly PlanOutput[],
+  inputs: readonly ProviderPsbtInput[],
+  outputs: readonly ProviderPsbtOutput[],
 ): TransactionPlan['protectedSatFlow'] {
   const flows: TransactionPlan['protectedSatFlow'] = [];
   for (let inputIndex = 0; inputIndex < inputs.length; inputIndex += 1) {
@@ -144,8 +216,8 @@ function inferExternalInscriptionFlows(
 }
 
 function inferMarketplaceInscriptionFlows(
-  inputs: readonly PlanInput[],
-  outputs: readonly PlanOutput[],
+  inputs: readonly ProviderPsbtInput[],
+  outputs: readonly ProviderPsbtOutput[],
 ): TransactionPlan['protectedSatFlow'] {
   const flows: TransactionPlan['protectedSatFlow'] = [];
   let inputStart = 0n;
@@ -186,7 +258,7 @@ function inferMarketplaceInscriptionFlows(
 export function providerPsbtOutpoints(psbtBase64: string): Array<{ txid: string; vout: number }> {
   const bytes = base64ToBytes(psbtBase64);
   if (bytesToBase64(bytes) !== psbtBase64) throw new Error('non-canonical PSBT base64');
-  const tx = Transaction.fromPSBT(bytes);
+  const tx = Transaction.fromPSBT(bytes, { allowUnknownInputs: true, allowUnknownOutputs: true });
   assertProviderPsbtItemCounts(tx);
   const outpoints: Array<{ txid: string; vout: number }> = [];
   for (let index = 0; index < tx.inputsLength; index += 1) {
@@ -202,6 +274,120 @@ function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i += 1) bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return bytes;
+}
+
+function policyError(code: ProviderPsbtPolicyErrorCode, message: string): never {
+  throw new ProviderPsbtPolicyError(code, message);
+}
+
+function providerInputScriptType(scriptPubKey: string): ProviderPsbtInputScriptType {
+  try {
+    return payableScriptKind(scriptPubKey);
+  } catch {
+    return 'unknown';
+  }
+}
+
+function providerOutputScriptType(
+  scriptPubKey: string,
+  valueSats: bigint,
+): ProviderPsbtOutputScriptType {
+  if (/^6a(?:[0-9a-f]{2})*$/u.test(scriptPubKey) && scriptPubKey.length <= 166) {
+    if (valueSats !== 0n) policyError('unknown_output_script', 'OP_RETURN output must have zero value');
+    return 'op_return';
+  }
+  try {
+    return payableScriptKind(scriptPubKey);
+  } catch {
+    return policyError('unknown_output_script', 'provider output locking script cannot be explained safely');
+  }
+}
+
+function derivationAddress(derivation: PlanDerivation, network: Network): string {
+  const publicKey = hexToBytes(derivation.publicKeyHex);
+  const encoded = derivation.lane === 'payment'
+    ? p2wpkh(publicKey, bitcoinNetwork(network)).address
+    : p2tr(publicKey.slice(1), undefined, bitcoinNetwork(network)).address;
+  if (!encoded) throw new Error('provider signing address encoding failed');
+  return encoded;
+}
+
+function assertSignInputBindings(
+  inputs: readonly ProviderPsbtInput[],
+  selectedInputIndexes: readonly number[],
+  network: Network,
+  bindings: readonly ProviderSignInputBinding[] | undefined,
+): void {
+  if (bindings === undefined) return;
+  const flattened = bindings.flatMap((binding) => binding.inputIndexes);
+  const unique = new Set(flattened);
+  const expected = [...selectedInputIndexes].sort((a, b) => a - b);
+  const actual = [...unique].sort((a, b) => a - b);
+  if (flattened.length !== unique.size || expected.length !== actual.length ||
+      expected.some((index, position) => index !== actual[position])) {
+    policyError('sign_input_address_mismatch', 'signInputs indexes differ from the selected wallet inputs');
+  }
+  for (const binding of bindings) {
+    for (const index of binding.inputIndexes) {
+      const derivation = inputs[index]?.derivation;
+      if (!derivation || derivationAddress(derivation, network) !== binding.address) {
+        policyError('sign_input_address_mismatch', `signInputs address does not own input ${index}`);
+      }
+    }
+  }
+}
+
+export function validateProviderSignInputBindings(
+  plan: ProviderPsbtPlanV5,
+  bindings: readonly ProviderSignInputBinding[],
+): void {
+  assertProviderPsbtPlan(plan);
+  assertSignInputBindings(plan.inputs, plan.selectedInputIndexes ?? [], plan.network, bindings);
+}
+
+/** Bind callback-level address, index, and sighash declarations to one prepared plan. */
+export function resolveProviderPsbtInputSelections(
+  plan: ProviderPsbtPlanV5,
+  inputsToSign?: readonly ProviderPsbtInputSelection[],
+): number[] {
+  assertProviderPsbtPlan(plan);
+  if (inputsToSign !== undefined) {
+    if (inputsToSign.length === 0 || inputsToSign.length > PROVIDER_MAX_PSBT_INPUT_SELECTIONS ||
+        inputsToSign.some((selection) => selection.signingIndexes.length === 0 ||
+          selection.signingIndexes.length > PROVIDER_MAX_PSBT_INPUTS) ||
+        new Set(inputsToSign.map((selection) => selection.address)).size !== inputsToSign.length) {
+      throw new Error('provider signing declarations are invalid or duplicated');
+    }
+  }
+  const approved = plan.selectedInputIndexes ?? plan.marketplace?.selectedInputIndexes ??
+    plan.inputs.map((item, index) => item.ownership === 'wallet' ? index : -1).filter((index) => index >= 0);
+  const selected = inputsToSign === undefined
+    ? [...approved]
+    : inputsToSign.flatMap((entry) => entry.signingIndexes);
+  const unique = new Set(selected);
+  if (selected.length === 0 || unique.size !== selected.length) {
+    throw new Error('provider signing indexes must be nonempty and unique');
+  }
+  const expected = [...approved].sort((a, b) => a - b);
+  const actual = [...unique].sort((a, b) => a - b);
+  if (expected.length !== actual.length || expected.some((index, position) => index !== actual[position])) {
+    throw new Error('provider signing indexes differ from prepared plan');
+  }
+  for (const declaration of inputsToSign ?? []) {
+    for (const index of declaration.signingIndexes) {
+      const planned = plan.inputs[index];
+      if (!planned || (declaration.sigHash !== undefined && planned.sighash !== declaration.sigHash)) {
+        throw new Error('provider sighash declaration differs from prepared plan');
+      }
+    }
+  }
+  if (inputsToSign !== undefined) {
+    assertSignInputBindings(plan.inputs, approved, plan.network, inputsToSign.map((selection) => ({
+      address: selection.address,
+      inputIndexes: selection.signingIndexes,
+    })));
+  }
+  return selected;
 }
 
 function hash(value: string | Uint8Array): string {
@@ -229,11 +415,13 @@ function providerTransactionCommitmentHash(plan: object): string {
     planHash: _planHash,
     transactionCommitmentHash: _transactionCommitmentHash,
     inscriptionPreviews: _inscriptionPreviews,
+    approvalExplanation: _approvalExplanation,
     ...transaction
   } = plan as ProviderPsbtPlanV3;
   void _planHash;
   void _transactionCommitmentHash;
   void _inscriptionPreviews;
+  void _approvalExplanation;
   return hash(JSON.stringify(canonical(transaction)));
 }
 
@@ -259,21 +447,26 @@ function assertSignatureOnlyMutation(
   after: Transaction,
   selected: readonly number[],
 ): void {
+  const beforeGlobal = (before as unknown as { global: unknown }).global;
+  const afterGlobal = (after as unknown as { global: unknown }).global;
+  if (JSON.stringify(canonical(beforeGlobal)) !== JSON.stringify(canonical(afterGlobal))) {
+    throw new Error('signed provider PSBT global metadata changed');
+  }
   if (before.inputsLength !== after.inputsLength || before.outputsLength !== after.outputsLength) {
-    throw new Error('signed marketplace PSBT shape changed');
+    throw new Error('signed provider PSBT shape changed');
   }
   for (let index = 0; index < before.inputsLength; index += 1) {
     const a = JSON.stringify(canonical(withoutSignatureFields(before.getInput(index) as Record<string, unknown>)));
     const b = JSON.stringify(canonical(withoutSignatureFields(after.getInput(index) as Record<string, unknown>)));
-    if (a !== b) throw new Error('signed marketplace PSBT metadata changed');
+    if (a !== b) throw new Error('signed provider PSBT metadata changed');
     if (!selected.includes(index) &&
         JSON.stringify(canonical(before.getInput(index))) !== JSON.stringify(canonical(after.getInput(index)))) {
-      throw new Error('unselected marketplace input changed');
+      throw new Error('unselected provider input changed');
     }
   }
   for (let index = 0; index < before.outputsLength; index += 1) {
     if (JSON.stringify(canonical(before.getOutput(index))) !== JSON.stringify(canonical(after.getOutput(index)))) {
-      throw new Error('signed marketplace output metadata changed');
+      throw new Error('signed provider PSBT output metadata changed');
     }
   }
 }
@@ -304,14 +497,16 @@ function previousOutput(tx: Transaction, index: number): { valueSats: bigint; sc
     }
     witness = { amount: decoded.valueSats, script: output.script };
   }
-  if (!witness) throw new Error('PSBT input is missing its previous output');
+  if (!witness) policyError('missing_prevout', 'PSBT input is missing its previous output');
   return { valueSats: witness.amount, scriptPubKey: bytesToHex(witness.script) };
 }
 
-function outputAddress(tx: Transaction, index: number, network: Network): string {
-  const address = tx.getOutputAddress(index, bitcoinNetwork(network));
-  if (!address) throw new Error('unsupported non-address output');
-  return address;
+function outputAddress(tx: Transaction, index: number, network: Network): string | null {
+  try {
+    return tx.getOutputAddress(index, bitcoinNetwork(network)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function createProviderPsbtPlan(input: {
@@ -334,6 +529,7 @@ export function createProviderPsbtPlan(input: {
   requiresAdvanced?: boolean;
   expiresAt?: number;
   selectedInputIndexes?: number[];
+  signInputBindings?: ProviderSignInputBinding[];
   communityVaultAcquisition?: CommunityVaultAcquisitionProviderReviewV1;
   communityVaultSale?: CommunityVaultSaleProviderReviewV1;
   communityVaultSaleBuyer?: CommunityVaultSaleBuyerProviderReviewV1;
@@ -343,7 +539,13 @@ export function createProviderPsbtPlan(input: {
     resolution: MarketplaceResolution;
     selectedInputIndexes?: number[];
   };
-}): ProviderPsbtPlanV3 {
+  linkedGroup?: {
+    groupId: string;
+    nodeId: string;
+    preparationHash: string;
+    inputProvenance: ProviderPsbtInputClassificationProvenanceV1[];
+  };
+}): ProviderPsbtPlanV5 {
   const specialContexts = [
     input.marketplace,
     input.communityVaultAcquisition,
@@ -363,13 +565,29 @@ export function createProviderPsbtPlan(input: {
   if (!new RegExp(`^acct_${input.network}_[0-9a-f]{64}$`, 'u').test(input.accountId)) {
     throw new Error('provider public account identity differs from network');
   }
+  if (input.linkedGroup && (input.binding.providerMethod !== 'signMultipleTransactions' ||
+      !input.linkedGroup.groupId || input.linkedGroup.groupId.length > 128 ||
+      !input.linkedGroup.nodeId || input.linkedGroup.nodeId.length > 128 ||
+      !/^[0-9a-f]{64}$/u.test(input.linkedGroup.preparationHash))) {
+    throw new Error('linked provider plan identity is invalid');
+  }
   const decoded = base64ToBytes(input.psbtBase64);
   if (bytesToBase64(decoded) !== input.psbtBase64) throw new Error('non-canonical PSBT base64');
-  const tx = Transaction.fromPSBT(decoded, { lowR: true });
+  const tx = Transaction.fromPSBT(decoded, {
+    lowR: true,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  const rawPsbtVersion = tx.opts.PSBTVersion;
+  if (rawPsbtVersion !== 0 && rawPsbtVersion !== 2) throw new Error('unsupported PSBT version');
+  const psbtVersion: 0 | 2 = rawPsbtVersion;
   assertProviderPsbtItemCounts(tx);
   if (tx.inputsLength === 0 || tx.outputsLength === 0) throw new Error('empty PSBT');
   const byOutpoint = new Map(input.classifications.map((item) => [`${item.txid}:${item.vout}`, item]));
   if (byOutpoint.size !== input.classifications.length) throw new Error('duplicate gateway classification');
+  if (input.linkedGroup && input.linkedGroup.inputProvenance.length !== tx.inputsLength) {
+    throw new Error('linked provider input provenance partition is incomplete');
+  }
   const wallet = new Map(input.walletInputs.map((item) => [item.outpoint, item.derivation]));
   if ([...wallet.values()].some((derivation) =>
     derivation.accountId !== input.accountId || derivation.account !== input.account)) {
@@ -438,7 +656,7 @@ export function createProviderPsbtPlan(input: {
         selectedInputIndexes: selectedMarketplaceIndexes,
       })
     : null;
-  const planInputs: PlanInput[] = [];
+  const planInputs: ProviderPsbtInput[] = [];
   const consumedOutpoints = new Set<string>();
   for (let index = 0; index < tx.inputsLength; index += 1) {
     const actual = tx.getInput(index);
@@ -461,59 +679,90 @@ export function createProviderPsbtPlan(input: {
       classification.scriptPubKey !== previous.scriptPubKey
     ) throw new Error('signed classification differs from PSBT prevout');
     const derivation = wallet.get(outpoint) ?? null;
+    const linkedProvenance = input.linkedGroup?.inputProvenance[index];
+    const linkedControl = linkedProvenance?.kind === 'linked_output'
+      ? linkedProvenance.walletControl : undefined;
     if (derivation) {
       if (actual.tapLeafScript?.length) {
-        if (!input.marketplace || marketplaceTemplate?.marketplaceId !== 'ordnet' || !marketplaceRule?.allowTaprootScriptPath ||
+        const marketplaceAllowed = input.marketplace && marketplaceTemplate?.marketplaceId === 'ordnet' &&
+          marketplaceRule?.allowTaprootScriptPath;
+        if ((!marketplaceAllowed && linkedControl !== 'ordnet_sale_script_path') ||
             derivation.lane !== 'ordinals') throw new Error('Taproot script-path signing is unsupported');
         verifyOrdnetSaleScriptPath(tx, index, derivation.publicKeyHex.slice(2));
       } else if (scriptPubKeyHex(derivation.publicKeyHex, derivation.lane, input.network) !== previous.scriptPubKey) {
-        throw new Error('wallet ownership proof mismatch');
+        const marketplaceAllowed = input.marketplace && marketplaceTemplate?.marketplaceId === 'ordnet' &&
+          marketplaceRule?.allowTaprootTreeKeyPath;
+        if ((!marketplaceAllowed && linkedControl !== 'ordnet_sale_key_path') || derivation.lane !== 'ordinals') {
+          throw new Error('wallet ownership proof mismatch');
+        }
+        verifyOrdnetSaleKeyPath(tx, index, derivation.publicKeyHex.slice(2));
       }
     }
-    const kind = scriptKind(previous.scriptPubKey);
-    const sighash = actual.sighashType ?? (kind === 'p2wpkh' ? SigHash.ALL : SigHash.DEFAULT);
-    const allowedSighashes = input.marketplace
-      ? selectedMarketplaceIndexes.includes(index)
-        ? marketplaceRule!.allowedSighashes
-        : [SigHash.DEFAULT, SigHash.ALL, SigHash.ALL_ANYONECANPAY, SigHash.SINGLE_ANYONECANPAY]
-      : derivation
-        // Flexible values pass this per-input gate only tentatively: they are
-        // legal solely as a §21.1 generic listing, whose whole-transaction
-        // invariants are enforced after outputs are known (below). A defaulted
-        // sighash never reaches here as flexible — only an explicit PSBT
-        // sighashType can carry 0x81/0x83.
-        ? kind === 'p2wpkh'
-          ? [SigHash.ALL, SigHash.ALL_ANYONECANPAY, SigHash.SINGLE_ANYONECANPAY]
-          : [SigHash.DEFAULT, SigHash.ALL, SigHash.ALL_ANYONECANPAY, SigHash.SINGLE_ANYONECANPAY]
-        : [SigHash.DEFAULT, SigHash.ALL, SigHash.ALL_ANYONECANPAY, SigHash.SINGLE_ANYONECANPAY];
-    if (!allowedSighashes.includes(sighash)) {
-      throw new Error('unsupported provider sighash');
+    const inputScriptType = providerInputScriptType(previous.scriptPubKey);
+    if (derivation && inputScriptType !== 'p2wpkh' && inputScriptType !== 'p2tr') {
+      policyError('unsupported_wallet_script', 'wallet-owned provider input uses an unsupported script path');
     }
-    if (actual.tapLeafScript?.length && derivation && !marketplaceRule?.allowTaprootScriptPath) {
+    const sighash = actual.sighashType ?? (inputScriptType === 'p2tr' ? SigHash.DEFAULT : SigHash.ALL);
+    const decodedSighash = decodeSighash(sighash, index, tx.outputsLength);
+    if (!decodedSighash.validEncoding) {
+      policyError('invalid_sighash', `input ${index} uses an invalid or reserved sighash encoding`);
+    }
+    const selectedForSigning = requestedIndexes?.includes(index) ?? Boolean(derivation);
+    if (selectedForSigning && derivation) {
+      if (decodedSighash.outputMode === 'none') {
+        policyError('sighash_none', `input ${index} does not commit to a destination`);
+      }
+      if (decodedSighash.outputMode === 'single' && decodedSighash.committedOutputIndexes.length === 0) {
+        policyError('single_missing_output', `input ${index} uses SINGLE without a corresponding output`);
+      }
+      const ordinaryAllowed = inputScriptType === 'p2wpkh'
+        ? [SigHash.ALL, SigHash.SINGLE, SigHash.ALL_ANYONECANPAY, SigHash.SINGLE_ANYONECANPAY]
+        : [SigHash.DEFAULT, SigHash.ALL, SigHash.SINGLE, SigHash.ALL_ANYONECANPAY,
+            SigHash.SINGLE_ANYONECANPAY];
+      const allowedSighashes = input.marketplace
+        ? selectedMarketplaceIndexes.includes(index) ? marketplaceRule!.allowedSighashes : ordinaryAllowed
+        : ordinaryAllowed;
+      if (!allowedSighashes.includes(sighash)) {
+        policyError('invalid_sighash', `input ${index} uses a sighash unsupported by its wallet script`);
+      }
+    }
+    if (actual.tapLeafScript?.length && derivation && !marketplaceRule?.allowTaprootScriptPath &&
+        linkedControl !== 'ordnet_sale_script_path') {
       throw new Error('Taproot script-path signing is unsupported');
     }
-    tx.updateInput(index, { sighashType: sighash });
     planInputs.push({
       txid,
       vout: actual.index,
       valueSats: previous.valueSats,
       scriptPubKey: previous.scriptPubKey,
       sequence: actual.sequence ?? 0xffffffff,
-      sighash: sighash as 0 | 1 | 129 | 131,
+      sighash: sighash as ProviderPsbtSighash,
+      scriptType: inputScriptType,
       ownership: derivation ? 'wallet' : 'external',
       derivation,
       classification: sourceFacts(classification),
     });
   }
-  const outputs: PlanOutput[] = [];
+  const outputs: ProviderPsbtOutput[] = [];
   for (let index = 0; index < tx.outputsLength; index += 1) {
     const output = tx.getOutput(index);
     if (!output.script || output.amount === undefined) throw new Error('PSBT output missing');
     const scriptPubKey = bytesToHex(output.script);
+    const outputScriptType = providerOutputScriptType(scriptPubKey, output.amount);
+    const decodedAddress = outputScriptType === 'op_return' ? null : outputAddress(tx, index, input.network);
+    if (outputScriptType !== 'op_return' && decodedAddress === null) {
+      policyError('unknown_output_script', `output ${index} address cannot be decoded`);
+    }
     const owned = input.walletOutputs?.find((item) => item.scriptPubKey === scriptPubKey)?.output;
     outputs.push(owned
-      ? { ...owned, valueSats: output.amount, scriptPubKey }
-      : { valueSats: output.amount, scriptPubKey, address: outputAddress(tx, index, input.network), role: 'recipient' });
+      ? { ...owned, valueSats: output.amount, scriptPubKey, scriptType: outputScriptType }
+      : {
+          valueSats: output.amount,
+          scriptPubKey,
+          scriptType: outputScriptType,
+          address: decodedAddress,
+          role: outputScriptType === 'op_return' ? 'data' : 'recipient',
+        });
   }
   if (input.marketplace) {
     assertMarketplaceWalletInputs({
@@ -534,21 +783,44 @@ export function createProviderPsbtPlan(input: {
     !planInputs[index] || (planInputs[index]!.ownership !== 'wallet' && !communitySaleIndexes.has(index)))) {
     throw new Error('requested input is not owned by the active account');
   }
+  assertSignInputBindings(planInputs, selectedInputIndexes, input.network, input.signInputBindings);
   // §21.1 generic listing: without a recognized marketplace template, a wallet
-  // input may carry a flexible sighash only as the classic listing shape, with
-  // every wallet guarantee proven from the PSBT itself rather than from origin
-  // trust: SINGLE|ANYONECANPAY requires the corresponding output to pay the
-  // active account at least the input's value, ALL|ANYONECANPAY commits every
-  // output, and in both cases the wallet-owned outputs must return at least
-  // the full wallet input value. Price sanity is the approval's disclosure;
-  // value loss and asset misuse remain hard failures.
-  const genericFlexibleIndexes = input.marketplace ? [] : selectedInputIndexes.filter((index) =>
+  // input may carry a flexible sighash only when every wallet guarantee is
+  // proven from the PSBT itself. The ordinary contextless path remains exactly
+  // one signature. A prepared linked ord.net alternative may contain multiple
+  // signatures only when Core already proved every selected internal outpoint
+  // uses the pinned sale tree: script-path SINGLE|ANYONECANPAY for settlement,
+  // or key-path ALL|ANYONECANPAY for recovery. Those provisional plans cannot
+  // be signed outside a group, and the group validator must still prove the
+  // unique settlement/recovery alternative before any signature is released.
+  const flexibleIndexes = selectedInputIndexes.filter((index) =>
+    planInputs[index]!.sighash === SigHash.SINGLE ||
     planInputs[index]!.sighash === SigHash.ALL_ANYONECANPAY ||
     planInputs[index]!.sighash === SigHash.SINGLE_ANYONECANPAY);
+  const genericFlexibleIndexes = input.marketplace ? [] : flexibleIndexes.filter((index) =>
+    planInputs[index]!.classification.inscriptions.length > 0);
+  const linkedOrdSettlement = input.marketplace === undefined && input.linkedGroup !== undefined &&
+    selectedInputIndexes.length > 0 && selectedInputIndexes.every((index) =>
+      planInputs[index]?.sighash === SigHash.SINGLE_ANYONECANPAY &&
+      input.linkedGroup!.inputProvenance[index]?.kind === 'linked_output' &&
+      input.linkedGroup!.inputProvenance[index].walletControl === 'ordnet_sale_script_path');
+  const linkedOrdRecovery = input.marketplace === undefined && input.linkedGroup !== undefined &&
+    selectedInputIndexes.length > 0 && selectedInputIndexes.every((index) =>
+      planInputs[index]?.sighash === SigHash.ALL_ANYONECANPAY &&
+      input.linkedGroup!.inputProvenance[index]?.kind === 'linked_output' &&
+      input.linkedGroup!.inputProvenance[index].walletControl === 'ordnet_sale_key_path');
+  const linkedOrdAlternativeLeg = linkedOrdSettlement || linkedOrdRecovery;
   let genericCommitment: MarketplaceCommitmentAnalysis | null = null;
   if (genericFlexibleIndexes.length > 0) {
     if (input.broadcast) {
       throw new Error('generic listing may not request wallet broadcast');
+    }
+    if (!linkedOrdAlternativeLeg &&
+        (genericFlexibleIndexes.length !== 1 || selectedInputIndexes.length !== 1)) {
+      policyError(
+        'generic_listing_multiple_signatures',
+        'generic flexible inscription signing requires exactly one selected wallet signature',
+      );
     }
     if (genericFlexibleIndexes.length !== selectedInputIndexes.length) {
       throw new Error('generic listing may not mix flexible and deterministic wallet signatures');
@@ -561,22 +833,26 @@ export function createProviderPsbtPlan(input: {
     for (const index of genericFlexibleIndexes) {
       const item = planInputs[index]!;
       if (item.classification.unsupportedAssetDetected || item.classification.satRanges !== null) {
-        throw new Error('generic listing may not spend unsupported-asset or rare-sat inputs');
+        policyError('unsafe_protected_asset', 'generic listing may not spend unsupported-asset or rare-sat inputs');
       }
-      if (item.sighash === SigHash.SINGLE_ANYONECANPAY) {
+      if (item.sighash === SigHash.SINGLE || item.sighash === SigHash.SINGLE_ANYONECANPAY) {
         const corresponding = outputs[index];
         if (!corresponding?.derivation) {
-          throw new Error('generic listing payout must return to the active account');
+          policyError('unsafe_protected_asset', 'generic listing payout must return to the active account');
         }
         if (corresponding.valueSats < item.valueSats) {
-          throw new Error('generic listing payout is below the listed input value');
+          policyError('unsafe_protected_asset', 'generic listing payout is below the listed input value');
         }
       }
     }
     const walletInSats = selectedInputIndexes.reduce((sum, index) => sum + planInputs[index]!.valueSats, 0n);
     const walletOutSats = outputs.reduce((sum, output) => output.derivation ? sum + output.valueSats : sum, 0n);
-    if (walletOutSats < walletInSats) {
-      throw new Error('generic listing does not guarantee the wallet value it spends');
+    if (!linkedOrdRecovery && walletOutSats < walletInSats) {
+      policyError('unsafe_fee_exposure', 'generic listing does not guarantee the wallet value it spends');
+    }
+    if (linkedOrdRecovery && (outputs.length === 0 || outputs.some((output) => !output.derivation) ||
+        walletOutSats >= walletInSats)) {
+      policyError('unsafe_fee_exposure', 'linked recovery must return every output to the wallet less a positive fee');
     }
     genericCommitment = analyzeMarketplaceCommitment({
       psbtBase64: input.psbtBase64,
@@ -595,19 +871,51 @@ export function createProviderPsbtPlan(input: {
       },
       selectedInputIndexes: [...selectedInputIndexes],
     });
+    if (linkedOrdRecovery) {
+      // Every input and output in this provisional recovery leg is proven to
+      // belong to the wallet, so its bounded positive debit is exactly its fee
+      // even though ANYONECANPAY leaves room for later external inputs.
+      genericCommitment.walletFeeExposureSats = walletInSats - walletOutSats;
+    }
   }
   const flexibleCommitment = marketplaceCommitment ?? genericCommitment;
   const protectedSatFlow = input.protectedSatFlow ?? (input.marketplace || genericCommitment
     ? inferMarketplaceInscriptionFlows(planInputs, outputs)
     : inferExternalInscriptionFlows(planInputs, outputs));
+  for (const index of genericFlexibleIndexes) {
+    // A pinned linked settlement intentionally sells the inscription while
+    // committing its corresponding payout. Its all-wallet recovery sibling,
+    // proven by the group validator, is the asset-preservation branch.
+    if (linkedOrdSettlement) continue;
+    const protectedFlows = protectedSatFlow.filter((flow) => flow.inputIndex === index);
+    if (protectedFlows.length === 0) {
+      policyError('unsafe_protected_asset', 'generic listing protected asset destination is not provable');
+    }
+    const commitment = decodeSighash(planInputs[index]!.sighash, index, outputs.length).committedOutputIndexes;
+    if (protectedFlows.some((flow) =>
+      commitment !== 'all' && !commitment.includes(flow.outputIndex))) {
+      policyError('unsafe_protected_asset', 'generic listing signature does not preserve the protected asset destination');
+    }
+  }
   const totalIn = planInputs.reduce((sum, item) => sum + item.valueSats, 0n);
   const totalOut = outputs.reduce((sum, item) => sum + item.valueSats, 0n);
-  // Only a partial commitment may legitimately show outputs at or above inputs:
-  // the counterparty's inputs are still missing. An exact commitment is a whole
-  // transaction, so the guard applies to it exactly as to a non-marketplace PSBT
-  // -- otherwise feeSats goes zero or negative and propagates into the fee rate,
-  // the analysis context and the plan hash.
-  if (flexibleCommitment?.mode !== 'partial' && totalIn <= totalOut) {
+  // Only a partial commitment may legitimately show outputs above inputs: the
+  // counterparty's inputs are still missing. A zero-fee exact request is safe to
+  // review only when every wallet input is selected, every selected signature
+  // commits the complete transaction, the wallet will not broadcast it, and no
+  // marketplace-flexible commitment is involved. This is deliberately generic:
+  // it does not claim to recognize any marketplace business semantics.
+  const selectedSet = new Set(selectedInputIndexes);
+  const deferredZeroFee = flexibleCommitment === null && totalIn === totalOut && !input.broadcast &&
+    (input.binding.providerMethod === 'signPsbt' ||
+      input.binding.providerMethod === 'signMultipleTransactions') && selectedInputIndexes.length > 0 &&
+    planInputs.every((planned, index) => planned.ownership !== 'wallet' || selectedSet.has(index)) &&
+    selectedInputIndexes.every((index) => {
+      const planned = planInputs[index];
+      return planned?.ownership === 'wallet' && (planned.sighash === SigHash.DEFAULT || planned.sighash === SigHash.ALL);
+    });
+  if (flexibleCommitment?.mode !== 'partial' && (totalIn < totalOut ||
+      (totalIn === totalOut && !deferredZeroFee))) {
     throw new Error('PSBT fee is not positive');
   }
   const feeSats = flexibleCommitment?.mode === 'partial'
@@ -623,9 +931,14 @@ export function createProviderPsbtPlan(input: {
       context: input.marketplace.context,
     });
   }
-  const vsize = estimateVsize(planInputs.map((item) => item.scriptPubKey), outputs.map((item) => item.scriptPubKey));
-  const feeRateSatPerKvB = (feeSats * 1000n + vsize - 1n) / vsize;
-  const psbt = tx.toPSBT();
+  let vsize: bigint | null = null;
+  try {
+    vsize = estimateVsize(planInputs.map((item) => item.scriptPubKey), outputs.map((item) => item.scriptPubKey));
+  } catch {
+    vsize = null;
+  }
+  const feeRateSatPerKvB = vsize === null ? null : (feeSats * 1000n + vsize - 1n) / vsize;
+  const psbt = decoded;
   const psbtHex = bytesToHex(psbt);
   const analysisResult = analyzePsbtHex(psbtHex, {
     network: input.network,
@@ -643,10 +956,28 @@ export function createProviderPsbtPlan(input: {
     vsize,
     feeRateSatPerKvB,
     rbf: planInputs.some((item) => item.sequence < 0xfffffffe),
+    providerPolicy: {
+      selectedInputIndexes,
+      allowedSighashesByInput: Object.fromEntries(selectedInputIndexes.map((index) =>
+        [index, [planInputs[index]!.sighash]])),
+      allowTaprootScriptPathInputIndexes: selectedInputIndexes.filter((index) =>
+        input.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
+        input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path'),
+      allowTaprootTreeKeyPathInputIndexes: selectedInputIndexes.filter((index) =>
+        input.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
+        input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_key_path'),
+      // This is provisional only: linked plans cannot be signed alone, and the
+      // group validator proves every contextless protected inscription has a
+      // committed recovery branch before releasing any signature.
+      permittedProtectedInputIndexes: input.linkedGroup ? selectedInputIndexes : [],
+      deferredZeroFee,
+    },
     ...(marketplaceCommitment ? { marketplace: {
       allowedSighashesByInput: Object.fromEntries(selectedMarketplaceIndexes.map((index) =>
         [index, marketplaceRule!.allowedSighashes])),
       allowTaprootScriptPathInputIndexes: marketplaceRule!.allowTaprootScriptPath
+        ? selectedMarketplaceIndexes : [],
+      allowTaprootTreeKeyPathInputIndexes: marketplaceRule!.allowTaprootTreeKeyPath
         ? selectedMarketplaceIndexes : [],
       permittedProtectedInputIndexes: selectedMarketplaceIndexes,
       commitment: marketplaceCommitment,
@@ -656,14 +987,20 @@ export function createProviderPsbtPlan(input: {
       allowedSighashesByInput: Object.fromEntries(genericFlexibleIndexes.map((index) =>
         [index, [planInputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: [],
+      allowTaprootTreeKeyPathInputIndexes: [],
       permittedProtectedInputIndexes: genericFlexibleIndexes,
       commitment: genericCommitment,
     } } : {}),
   });
   if (!analysisResult.ok || analysisResult.analysis.hardViolations.length > 0) {
     throw new Error(`provider PSBT violates transaction safety policy${
-      analysisResult.ok ? `: ${analysisResult.analysis.hardViolations.map((item) => item.code).join(',')}` : ''
+      analysisResult.ok ? `: ${analysisResult.analysis.hardViolations.map((item) =>
+        `${item.code}@${item.inputIndex ?? '-'}:${item.outputIndex ?? '-'}`).join(',')}` : ''
     }`);
+  }
+  if (input.broadcast && (vsize === null || planInputs.some((item) =>
+    item.scriptType !== 'p2wpkh' && item.scriptType !== 'p2tr'))) {
+    policyError('unsupported_wallet_script', 'wallet broadcast requires fully verifiable P2WPKH or P2TR inputs');
   }
   if (!input.marketplace && (input.kind ?? 'provider_psbt') === 'provider_psbt' && analysisResult.analysis.warnings.some(
     (warning) => warning.code === 'high_absolute_fee' || warning.code === 'high_relative_fee',
@@ -672,8 +1009,26 @@ export function createProviderPsbtPlan(input: {
     // template, but it never overrides the material-fee invariant (§16.3).
     throw new Error('provider PSBT has a non-overridable fee anomaly');
   }
+  const communityPlan = Boolean(input.communityVaultAcquisition || input.communityVaultSale ||
+    input.communityVaultSaleBuyer || input.communityVaultPositionTransfer);
+  const approvalExplanation = communityPlan ? null : createProviderPsbtApprovalExplanation({
+    selectedInputIndexes,
+    inputs: planInputs,
+    outputs,
+    protectedSatFlow,
+    inscriptionEffects: analysisResult.analysis.assetEffects.inscriptions,
+    analysisWarnings: analysisResult.analysis.warnings,
+    feeRateSatPerKvB,
+    rbf: planInputs.some((item) => item.sequence < 0xfffffffe),
+    broadcast: input.broadcast,
+    ...(input.marketplace ? { marketplaceAction: input.marketplace.context.action } : {}),
+    genericListing: genericCommitment !== null,
+    ...((marketplaceCommitment ?? genericCommitment)?.guaranteedProceedsSats === undefined ? {} : {
+      guaranteedProceedsSats: (marketplaceCommitment ?? genericCommitment)!.guaranteedProceedsSats,
+    }),
+  });
   const withoutHash = {
-    version: 4 as const,
+    version: 5 as const,
     planId: input.planId,
     createdAt: input.now,
     expiresAt: Math.min(input.now + 5 * 60_000, input.expiresAt ?? Number.MAX_SAFE_INTEGER),
@@ -688,10 +1043,9 @@ export function createProviderPsbtPlan(input: {
           ? 'community_vault_sale' as const :
         input.kind ?? 'provider_psbt',
     provider: input.binding,
+    psbtVersion,
     broadcast: input.broadcast,
-    requiresAdvanced: input.marketplace || genericCommitment || input.communityVaultAcquisition ||
-      input.communityVaultSale || input.communityVaultSaleBuyer || input.communityVaultPositionTransfer
-      ? false : input.requiresAdvanced !== false,
+    requiresAdvanced: false,
     selectedInputIndexes,
     ...(genericCommitment ? { genericListing: {
       selectedInputIndexes: [...selectedInputIndexes],
@@ -701,6 +1055,7 @@ export function createProviderPsbtPlan(input: {
     outputs,
     source: input.source,
     feeSats,
+    deferredZeroFee,
     vsize,
     feeRateSatPerKvB,
     rbf: planInputs.some((item) => item.sequence < 0xfffffffe),
@@ -709,12 +1064,14 @@ export function createProviderPsbtPlan(input: {
     psbtHash: hash(psbt),
     analysis: analysisResult.analysis,
     analysisHash: analysisResult.analysisHash,
+    approvalExplanation,
     ...(input.marketplace && marketplaceCommitment ? { marketplace: {
       context: input.marketplace.context,
       resolution: input.marketplace.resolution,
       selectedInputIndexes: selectedMarketplaceIndexes,
       commitment: marketplaceCommitment,
       allowTaprootScriptPath: marketplaceRule!.allowTaprootScriptPath,
+      allowTaprootTreeKeyPath: marketplaceRule!.allowTaprootTreeKeyPath,
     } } : {}),
     ...(input.communityVaultAcquisition ? {
       communityVaultAcquisition: input.communityVaultAcquisition,
@@ -728,6 +1085,10 @@ export function createProviderPsbtPlan(input: {
     ...(input.communityVaultPositionTransfer ? {
       communityVaultPositionTransfer: input.communityVaultPositionTransfer,
     } : {}),
+    ...(input.linkedGroup ? { linkedGroup: {
+      ...input.linkedGroup,
+      inputProvenance: input.linkedGroup.inputProvenance.map((item) => ({ ...item })),
+    } } : {}),
   };
   const transactionCommitmentHash = providerTransactionCommitmentHash(withoutHash);
   const inscriptionPreviews: StoredInscriptionPreviewSet | null =
@@ -807,13 +1168,19 @@ export function reattachProviderPsbtPlanPreviews(
   liveProviderPreviews.set(plan, previews);
 }
 
-export function signProviderPsbtPlan(input: {
+function signProviderPsbtPlanInternal(input: {
   plan: ProviderPsbtPlanV3;
   seed: Uint8Array;
   requestedInputIndexes?: number[];
   random: (length: number) => Uint8Array;
-}): { psbtBase64: string; transactionHex?: string } {
+}, linkedGroup: ProviderPsbtPlanV3['linkedGroup'] | null): { psbtBase64: string; transactionHex?: string } {
   assertProviderPsbtPlan(input.plan);
+  if (input.plan.linkedGroup && (!linkedGroup ||
+      input.plan.linkedGroup.groupId !== linkedGroup.groupId ||
+      input.plan.linkedGroup.nodeId !== linkedGroup.nodeId ||
+      input.plan.linkedGroup.preparationHash !== linkedGroup.preparationHash)) {
+    throw new Error('linked provider plan may only be signed by its validated group');
+  }
   if (input.plan.genericListing && input.plan.broadcast) {
     throw new Error('generic listing may not request wallet broadcast');
   }
@@ -831,8 +1198,9 @@ export function signProviderPsbtPlan(input: {
   if (expected.length !== actualSelected.length || expected.some((index, position) => index !== actualSelected[position])) {
     throw new Error('provider signer indexes changed after approval');
   }
-  const tx = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), { lowR: true });
-  const beforeSigning = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), { lowR: true });
+  const txOptions = { lowR: true, allowUnknownInputs: true, allowUnknownOutputs: true } as const;
+  const tx = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), txOptions);
+  const beforeSigning = Transaction.fromPSBT(hexToBytes(input.plan.psbtHex), txOptions);
   assertProviderPsbtItemCounts(tx);
   for (const index of selected) {
     const planned = input.plan.inputs[index];
@@ -898,10 +1266,25 @@ export function signProviderPsbtPlan(input: {
     vsize: input.plan.vsize,
     feeRateSatPerKvB: input.plan.feeRateSatPerKvB,
     rbf: input.plan.rbf,
+    providerPolicy: {
+      selectedInputIndexes: selected,
+      allowedSighashesByInput: Object.fromEntries(selected.map((index) =>
+        [index, [input.plan.inputs[index]!.sighash]])),
+      allowTaprootScriptPathInputIndexes: selected.filter((index) =>
+        input.plan.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
+        input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path'),
+      allowTaprootTreeKeyPathInputIndexes: selected.filter((index) =>
+        input.plan.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
+        input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_key_path'),
+      permittedProtectedInputIndexes: input.plan.linkedGroup ? selected : [],
+      deferredZeroFee: input.plan.deferredZeroFee,
+    },
     ...(input.plan.marketplace ? { marketplace: {
       allowedSighashesByInput: Object.fromEntries(input.plan.marketplace.selectedInputIndexes.map((index) =>
         [index, [input.plan.inputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: input.plan.marketplace.allowTaprootScriptPath
+        ? input.plan.marketplace.selectedInputIndexes : [],
+      allowTaprootTreeKeyPathInputIndexes: input.plan.marketplace.allowTaprootTreeKeyPath
         ? input.plan.marketplace.selectedInputIndexes : [],
       permittedProtectedInputIndexes: input.plan.marketplace.selectedInputIndexes,
       commitment: input.plan.marketplace.commitment,
@@ -909,6 +1292,7 @@ export function signProviderPsbtPlan(input: {
       allowedSighashesByInput: Object.fromEntries(input.plan.genericListing.selectedInputIndexes.map((index) =>
         [index, [input.plan.inputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: [],
+      allowTaprootTreeKeyPathInputIndexes: [],
       permittedProtectedInputIndexes: input.plan.genericListing.selectedInputIndexes,
       commitment: input.plan.genericListing.commitment,
     } } : {}),
@@ -923,8 +1307,72 @@ export function signProviderPsbtPlan(input: {
   return { psbtBase64: bytesToBase64(signed), transactionHex };
 }
 
+export function signProviderPsbtPlan(input: {
+  plan: ProviderPsbtPlanV3;
+  seed: Uint8Array;
+  requestedInputIndexes?: number[];
+  random: (length: number) => Uint8Array;
+}): { psbtBase64: string; transactionHex?: string } {
+  if (input.plan.linkedGroup) {
+    throw new Error('linked provider plan may only be signed by its validated group');
+  }
+  return signProviderPsbtPlanInternal(input, null);
+}
+
+/**
+ * Sign a complete validated group without exposing any per-item signature.
+ * The full graph is revalidated before signing and again before release.
+ */
+export async function signValidatedProviderPsbtGroupAtomically(input: {
+  plan: ProviderPsbtGroupPlanV1;
+  seed: Uint8Array;
+  now: () => number;
+  random: (length: number) => Uint8Array;
+  guard?: () => void;
+  yieldControl: () => Promise<void>;
+}): Promise<SignedProviderPsbtGroupV1> {
+  assertProviderPsbtGroupPlan(input.plan);
+  const assertActive = (): void => {
+    const now = input.now();
+    if (!Number.isSafeInteger(now) || now < 0 || now >= input.plan.expiresAt) {
+      throw new Error('provider group plan expired');
+    }
+  };
+  assertActive();
+  const byNodeId = new Map(input.plan.items.map((item) => [item.nodeId, item]));
+  const signed = new Map<string, string>();
+  for (const nodeId of input.plan.topology.topologicalNodeIds) {
+    await input.yieldControl();
+    assertActive();
+    input.guard?.();
+    const item = byNodeId.get(nodeId);
+    if (!item) throw new Error('provider group topology differs from item order');
+    const result = signProviderPsbtPlanInternal({
+      plan: item.plan,
+      seed: input.seed,
+      requestedInputIndexes: item.requestedInputIndexes,
+      random: input.random,
+    }, item.plan.linkedGroup ?? null);
+    if (result.transactionHex !== undefined) throw new Error('provider group may not broadcast');
+    signed.set(nodeId, result.psbtBase64);
+  }
+  await input.yieldControl();
+  assertActive();
+  input.guard?.();
+  assertProviderPsbtGroupPlan(input.plan);
+  return {
+    version: 1,
+    groupHash: input.plan.groupHash,
+    results: input.plan.items.map((item) => {
+      const psbtBase64 = signed.get(item.nodeId);
+      if (!psbtBase64) throw new Error('provider group signing did not complete atomically');
+      return { nodeId: item.nodeId, psbtBase64 };
+    }),
+  };
+}
+
 export function assertProviderPsbtPlan(plan: ProviderPsbtPlanV3): void {
-  if (!plan || plan.version !== 4 || !plan.inscriptionPreviews ||
+  if (!plan || plan.version !== 5 || !plan.inscriptionPreviews ||
       !new RegExp(`^acct_${plan.network}_[0-9a-f]{64}$`, 'u').test(plan.accountId) ||
       plan.inputs.some((input) => input.ownership === 'wallet' &&
         (input.derivation?.accountId !== plan.accountId || input.derivation.account !== plan.account)) ||
@@ -933,8 +1381,16 @@ export function assertProviderPsbtPlan(plan: ProviderPsbtPlanV3): void {
       !['provider_psbt', 'provider_transfer', 'provider_ordinal_transfer', 'marketplace_psbt',
         'community_vault_acquisition', 'community_vault_sale'].includes(plan.kind) ||
       !Array.isArray(plan.inputs) || !Array.isArray(plan.outputs) ||
+      (plan.psbtVersion !== 0 && plan.psbtVersion !== 2) ||
+      (plan.approvalExplanation === null &&
+        !['community_vault_acquisition', 'community_vault_sale'].includes(plan.kind)) ||
       (plan.selectedInputIndexes !== undefined &&
         (!Array.isArray(plan.selectedInputIndexes) || plan.selectedInputIndexes.length === 0)) ||
+      (plan.linkedGroup !== undefined && (plan.broadcast ||
+        plan.provider.providerMethod !== 'signMultipleTransactions' ||
+        !plan.linkedGroup.groupId || !plan.linkedGroup.nodeId ||
+        !/^[0-9a-f]{64}$/u.test(plan.linkedGroup.preparationHash) ||
+        plan.linkedGroup.inputProvenance.length !== plan.inputs.length)) ||
       providerTransactionCommitmentHash(plan) !== plan.transactionCommitmentHash ||
       plan.inscriptionPreviews.transactionCommitmentHash !== plan.transactionCommitmentHash ||
       plan.inscriptionPreviews.analysisHash !== plan.analysisHash ||
@@ -952,10 +1408,18 @@ export function validateProviderTransactionHex(plan: ProviderPsbtPlanV3, transac
     network: plan.network, account: plan.account, kind: plan.kind, source: plan.source,
     inputs: plan.inputs, outputs: plan.outputs, protectedSatFlow: plan.protectedSatFlow, feeSats: plan.feeSats,
     vsize: plan.vsize, feeRateSatPerKvB: plan.feeRateSatPerKvB, rbf: plan.rbf,
+    providerPolicy: {
+      selectedInputIndexes: plan.selectedInputIndexes ?? [],
+      allowedSighashesByInput: Object.fromEntries((plan.selectedInputIndexes ?? []).map((index) =>
+        [index, [plan.inputs[index]!.sighash]])),
+      deferredZeroFee: plan.deferredZeroFee,
+    },
     ...(plan.marketplace ? { marketplace: {
       allowedSighashesByInput: Object.fromEntries(plan.marketplace.selectedInputIndexes.map((index) =>
         [index, [plan.inputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: plan.marketplace.allowTaprootScriptPath
+        ? plan.marketplace.selectedInputIndexes : [],
+      allowTaprootTreeKeyPathInputIndexes: plan.marketplace.allowTaprootTreeKeyPath
         ? plan.marketplace.selectedInputIndexes : [],
       permittedProtectedInputIndexes: plan.marketplace.selectedInputIndexes,
       commitment: plan.marketplace.commitment,
@@ -968,7 +1432,9 @@ export function validateProviderTransactionHex(plan: ProviderPsbtPlanV3, transac
   if (tx.inputsLength !== plan.inputs.length || tx.outputsLength !== plan.outputs.length) {
     throw new Error('provider transaction shape changed');
   }
-  if (BigInt(tx.vsize) > plan.vsize) throw new Error('provider transaction exceeds approved vsize bound');
+  if (plan.vsize === null || BigInt(tx.vsize) > plan.vsize) {
+    throw new Error('provider transaction exceeds approved vsize bound');
+  }
   const scripts = plan.inputs.map((item) => hexToBytes(item.scriptPubKey));
   const amounts = plan.inputs.map((item) => item.valueSats);
   for (let index = 0; index < plan.inputs.length; index += 1) {
@@ -977,9 +1443,16 @@ export function validateProviderTransactionHex(plan: ProviderPsbtPlanV3, transac
     if (scriptKind(expected.scriptPubKey) === 'p2wpkh') {
       const signature = witness[0];
       const publicKey = witness[1];
-      if (!signature || !publicKey || signature.at(-1) !== SigHash.ALL) throw new Error('invalid provider P2WPKH witness');
+      if (!signature || !publicKey || signature.at(-1) !== expected.sighash) {
+        throw new Error('invalid provider P2WPKH witness');
+      }
       const keyHash = expected.scriptPubKey.slice(4);
-      const preimage = tx.preimageWitnessV0(index, hexToBytes(`76a914${keyHash}88ac`), SigHash.ALL, expected.valueSats);
+      const preimage = tx.preimageWitnessV0(
+        index,
+        hexToBytes(`76a914${keyHash}88ac`),
+        expected.sighash,
+        expected.valueSats,
+      );
       if (scriptPubKeyHex(bytesToHex(publicKey), 'payment', plan.network) !== expected.scriptPubKey ||
           !secp256k1.verify(signature.slice(0, -1), preimage, publicKey, {
             format: 'der', prehash: false, lowS: true,
@@ -989,6 +1462,7 @@ export function validateProviderTransactionHex(plan: ProviderPsbtPlanV3, transac
       const signature = witness[0];
       if (!signature || (signature.length !== 64 && signature.length !== 65)) throw new Error('invalid provider Taproot signature');
       const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
+      if (sighash !== expected.sighash) throw new Error('provider Taproot witness sighash differs from plan');
       const preimage = tx.preimageWitnessV1(index, scripts, sighash, amounts);
       if (!schnorr.verify(signature.slice(0, 64), preimage, hexToBytes(expected.scriptPubKey).slice(2))) {
         throw new Error('invalid provider Taproot signature');

@@ -3,22 +3,20 @@ import { bytesToBase64, bytesToHex, hexToBytes } from '../vault/encoding';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import {
   assertProviderPsbtPlan,
+  resolveProviderPsbtInputSelections,
   signProviderPsbtPlan,
   type ProviderAuthorityBinding,
+  type ProviderPsbtInputSelection,
   type ProviderPsbtPlanV3,
 } from './provider-psbt';
 import {
   PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS,
+  PROVIDER_MAX_PSBT_BATCH_INPUTS,
   PROVIDER_MAX_PSBT_BATCH_ITEMS,
-  PROVIDER_MAX_PSBT_INPUTS,
   PROVIDER_MAX_PSBT_OUTPUTS,
 } from './provider-psbt-limits';
 
-export interface ProviderBatchInputSelection {
-  address: string;
-  signingIndexes: number[];
-  sigHash?: 0 | 1 | 129 | 131 | undefined;
-}
+export type ProviderBatchInputSelection = ProviderPsbtInputSelection;
 
 export interface ProviderPsbtBatchItemV1 {
   plan: ProviderPsbtPlanV3;
@@ -73,27 +71,7 @@ function selectedIndexes(
   plan: ProviderPsbtPlanV3,
   inputsToSign?: readonly ProviderBatchInputSelection[],
 ): number[] {
-  const selected = inputsToSign === undefined
-    ? [...(plan.selectedInputIndexes ?? [])]
-    : inputsToSign.flatMap((entry) => entry.signingIndexes);
-  const unique = new Set(selected);
-  if (selected.length === 0 || unique.size !== selected.length) {
-    throw new Error('batch signing indexes must be nonempty and unique');
-  }
-  const expected = [...(plan.selectedInputIndexes ?? [])].sort((a, b) => a - b);
-  const actual = [...unique].sort((a, b) => a - b);
-  if (expected.length !== actual.length || expected.some((index, position) => index !== actual[position])) {
-    throw new Error('batch signing indexes differ from prepared plan');
-  }
-  for (const declaration of inputsToSign ?? []) {
-    for (const index of declaration.signingIndexes) {
-      const input = plan.inputs[index];
-      if (!input || (declaration.sigHash !== undefined && input.sighash !== declaration.sigHash)) {
-        throw new Error('batch sighash declaration differs from prepared plan');
-      }
-    }
-  }
-  return selected;
+  return resolveProviderPsbtInputSelections(plan, inputsToSign);
 }
 
 function batchProjection(plan: Omit<ProviderPsbtBatchPlanV1, 'batchHash'>): unknown {
@@ -179,7 +157,7 @@ function validateItems(items: readonly ProviderPsbtBatchItemV1[]): ProviderPsbtB
     }
   }
   if (encodedPsbtChars > PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS ||
-      inputs > PROVIDER_MAX_PSBT_INPUTS || outputs > PROVIDER_MAX_PSBT_OUTPUTS) {
+      inputs > PROVIDER_MAX_PSBT_BATCH_INPUTS || outputs > PROVIDER_MAX_PSBT_OUTPUTS) {
     throw new Error('PSBT batch exceeds aggregate resource limits');
   }
   return { encodedPsbtChars, inputs, outputs, walletInputSats, walletOutputSats, feeExposureSats };

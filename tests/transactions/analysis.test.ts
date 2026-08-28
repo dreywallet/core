@@ -10,6 +10,7 @@ import {
 } from '../../src/domain/transactions/analysis';
 import { buildPsbtHex } from '../../src/domain/transactions/signing';
 import { estimateVsize } from '../../src/domain/transactions/fees';
+import type { PlanInput, PlanOutput } from '../../src/domain/transactions/plan';
 
 const seed = mnemonicToSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
 
@@ -151,7 +152,7 @@ describe('M7H transaction analysis', () => {
       { outputMode: 'all', anyoneCanPay: false, committedOutputIndexes: 'all', validEncoding: true },
       { outputMode: 'none', anyoneCanPay: false, committedOutputIndexes: [], validEncoding: true },
       { outputMode: 'single', anyoneCanPay: false, committedOutputIndexes: [1], validEncoding: true },
-      { outputMode: 'default', anyoneCanPay: true, committedOutputIndexes: 'all', validEncoding: true },
+      { outputMode: 'default', anyoneCanPay: true, committedOutputIndexes: 'all', validEncoding: false },
       { outputMode: 'all', anyoneCanPay: true, committedOutputIndexes: 'all', validEncoding: true },
       { outputMode: 'none', anyoneCanPay: true, committedOutputIndexes: [], validEncoding: true },
       { outputMode: 'single', anyoneCanPay: true, committedOutputIndexes: [1], validEncoding: true },
@@ -220,7 +221,7 @@ describe('M7H transaction analysis', () => {
     const analyze = (mutate: (context: TransactionAnalysisContext) => void) => {
       const context = structuredClone(base.context);
       mutate(context);
-      const psbtHex = buildPsbtHex(context.inputs, context.outputs);
+      const psbtHex = buildPsbtHex(context.inputs as PlanInput[], context.outputs as PlanOutput[]);
       const result = analyzePsbtHex(psbtHex, context);
       expect(result.ok).toBe(true);
       return result.ok ? result.analysis.hardViolations.map((finding) => finding.code) : [];
