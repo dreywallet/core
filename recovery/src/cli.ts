@@ -19,6 +19,7 @@ import { installNodeCryptoProvider, nodeCryptoProvider, sha256Hex } from './cryp
 import { deriveLadder, verifyKitHex, type VerifiedKit } from './kit';
 import {
   FEE_RATE_ACKNOWLEDGEMENT_THRESHOLD_SAT_PER_VB,
+  RECOVERY_MAX_SEARCH_DEPTH,
   buildRecoveryPlan,
   resolveInputs,
   type SuppliedUtxo,
@@ -51,7 +52,7 @@ export const RECOVERY_MAX_UTXOS = 10_000;
 export const RECOVERY_SESSION_MAX_BYTES = 64 * 1024 * 1024;
 export const RECOVERY_PSBT_HEX_MAX_BYTES = 32 * 1024 * 1024;
 export const RECOVERY_TRANSACTION_HEX_MAX_BYTES = 32 * 1024 * 1024;
-export const RECOVERY_MAX_SEARCH_DEPTH = 100_000;
+export { RECOVERY_MAX_SEARCH_DEPTH } from './plan';
 
 interface Session {
   format: typeof TOOL_VERSION;
@@ -379,11 +380,13 @@ async function cmdPlan(args: Args): Promise<void> {
     }
   }
 
-  const inputs = resolveInputs(identity, supplied, parseRecoverySearchDepth(args.flags.get('search-depth')));
+  const searchDepth = parseRecoverySearchDepth(args.flags.get('search-depth'));
+  const inputs = resolveInputs(identity, supplied, searchDepth);
   const built = buildRecoveryPlan({
     identity, inputs,
     destinationAddress: required(args, 'to'),
     feeRateSatPerVb,
+    searchDepth,
     ...(args.flags.has('amount') ? { amountSats: BigInt(required(args, 'amount')) } : {}),
     ...(args.flags.has('change-index') ? { changeIndex: Number(args.flags.get('change-index')) } : {}),
     ...(optionalBigint(args, 'now') === undefined ? {} : { nowMs: optionalBigint(args, 'now')! }),

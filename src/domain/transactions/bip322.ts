@@ -28,6 +28,7 @@ import {
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { bitcoinNetwork, type AddressKind, type Network } from '../keys/derivation';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
+import { canonicalTaprootSignatureSighash } from './taproot-signature';
 
 export const BIP322_SIMPLE_PREFIX = 'smp';
 export const BIP322_MAX_MESSAGE_BYTES = 4_096;
@@ -205,8 +206,9 @@ export function verifyBip322Simple(
     if (decoded.type === 'tr') {
       if (witness.length !== 1) return false;
       const tapSignature = witness[0];
-      if (!tapSignature || (tapSignature.length !== 64 && tapSignature.length !== 65)) return false;
-      const sighash = tapSignature.length === 64 ? SigHash.DEFAULT : tapSignature[64]!;
+      if (!tapSignature) return false;
+      const sighash = canonicalTaprootSignatureSighash(tapSignature);
+      if (sighash === null) return false;
       if (sighash !== SigHash.DEFAULT && sighash !== SigHash.ALL) return false;
       const hash = toSign.preimageWitnessV1(0, [challenge], sighash, [0n]);
       return schnorr.verify(tapSignature.slice(0, 64), hash, decoded.pubkey);

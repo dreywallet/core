@@ -10,6 +10,7 @@ import {
   assertProviderPsbtPlan,
   createProviderPsbtPlan,
   partitionOrdinalSatFlow,
+  providerPsbtPlanPreviews,
   providerPsbtOutpoints,
   signProviderPsbtPlan,
 } from '../../src/domain/transactions/provider-psbt';
@@ -17,6 +18,7 @@ import type { ProviderPsbtPlanV3 } from '../../src/domain/transactions/provider-
 import type { UtxoClassification } from '../../src/domain/gateway/contract';
 import { publicAccountFromSeed } from '../../src/domain/accounts/public-account';
 import { PROVIDER_MAX_PSBT_INPUTS } from '../../src/domain/transactions/provider-psbt-limits';
+import type { InscriptionPreviewSet } from '../../src/domain/transactions/inscription-previews';
 
 beforeAll(() => installTestCryptoProvider());
 
@@ -48,8 +50,8 @@ it('rejects a provider PSBT with too many inputs before outpoint analysis', () =
     .toThrow(`PSBT input count exceeds ${PROVIDER_MAX_PSBT_INPUTS}`);
 });
 
-function bindTestPlaceholders(plan: ProviderPsbtPlanV3): ProviderPsbtPlanV3 {
-  return bindProviderPsbtPlanPreviews(plan, {
+function testPlaceholders(plan: ProviderPsbtPlanV3): InscriptionPreviewSet {
+  return {
     transactionCommitmentHash: plan.transactionCommitmentHash,
     analysisHash: plan.analysisHash,
     psbtHash: plan.psbtHash,
@@ -93,7 +95,11 @@ function bindTestPlaceholders(plan: ProviderPsbtPlanV3): ProviderPsbtPlanV3 {
         bytesBase64: null,
       },
     })),
-  });
+  };
+}
+
+function bindTestPlaceholders(plan: ProviderPsbtPlanV3): ProviderPsbtPlanV3 {
+  return bindProviderPsbtPlanPreviews(plan, testPlaceholders(plan));
 }
 
 function fixture(primaryClass: UtxoClassification['primaryClass'] = 'cardinal_clean') {
@@ -308,7 +314,14 @@ describe('provider PSBT analysis binding', () => {
     });
     expect(() => create(listingPsbt(500_000n, paymentScript), true))
       .toThrow(/generic listing may not request wallet broadcast/u);
-    const plan = bindTestPlaceholders(create(listingPsbt(500_000n, paymentScript)));
+    const unboundPlan = create(listingPsbt(500_000n, paymentScript));
+    const previews = testPlaceholders(unboundPlan);
+    const plan = bindProviderPsbtPlanPreviews(unboundPlan, previews);
+    previews.items[0]!.metadata.number = 42;
+    expect(providerPsbtPlanPreviews(plan).items[0]!.metadata.number).toBeNull();
+    const returned = providerPsbtPlanPreviews(plan);
+    returned.items[0]!.metadata.number = 43;
+    expect(providerPsbtPlanPreviews(plan).items[0]!.metadata.number).toBeNull();
     // A proven listing is one-click: no Advanced ceremony, no wallet fee exposure.
     expect(plan.requiresAdvanced).toBe(false);
     expect(plan.feeSats).toBe(0n);

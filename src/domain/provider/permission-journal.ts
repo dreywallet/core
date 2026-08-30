@@ -380,14 +380,18 @@ export async function loadPermissionJournal(
   };
 }
 
-export async function appendPermissionEvent(input: {
+type PermissionAppendInput = {
   area: PermissionStorageArea;
   storageKey: string;
   dek: Uint8Array;
   vaultId: string;
   expectedRevision: number;
   event: PermissionJournalEvent;
-}): Promise<PermissionJournalLoadResult> {
+};
+
+const appendQueues = new WeakMap<PermissionStorageArea, Map<string, Promise<void>>>();
+
+async function appendPermissionEventUnlocked(input: PermissionAppendInput): Promise<PermissionJournalLoadResult> {
   const event = permissionJournalEventSchema.safeParse(input.event);
   if (!event.success) throw new PermissionJournalError('invalid_event', 'invalid permission event');
   if ((event.data.kind === 'grant' && event.data.scope.vaultId !== input.vaultId) ||
@@ -448,4 +452,26 @@ export async function appendPermissionEvent(input: {
     events: staged.events,
     projection: reducePermissionEvents(staged.events),
   };
+}
+
+export function appendPermissionEvent(input: PermissionAppendInput): Promise<PermissionJournalLoadResult> {
+  let areaQueues = appendQueues.get(input.area);
+  if (!areaQueues) {
+    areaQueues = new Map();
+    appendQueues.set(input.area, areaQueues);
+  }
+  const prior = areaQueues.get(input.storageKey) ?? Promise.resolve();
+  const result = prior.then(
+    () => appendPermissionEventUnlocked(input),
+    () => appendPermissionEventUnlocked(input),
+  );
+  const settled = result.then(() => undefined, () => undefined);
+  areaQueues.set(input.storageKey, settled);
+  void settled.then(() => {
+    if (areaQueues!.get(input.storageKey) === settled) {
+      areaQueues!.delete(input.storageKey);
+      if (areaQueues!.size === 0) appendQueues.delete(input.area);
+    }
+  });
+  return result;
 }

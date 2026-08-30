@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   OutpointsClassifyResponse,
+  SnapshotHistoryEntry,
   WalletScanSnapshotResponse,
 } from '../../src/domain/gateway/contract';
 import { scanUnit, type ScanUnitPorts } from '../../src/scan/scan-engine';
@@ -55,6 +56,7 @@ interface FakeOptions {
   includeFundingHistory?: boolean;
   snapshotFailure?: { reason: 'http'; httpStatus: number };
   mutateClassify?: (body: ClassifyBody) => ClassifyBody;
+  historyForSnapshot?: (scriptHashes: string[], call: number) => SnapshotHistoryEntry[];
 }
 
 function makePorts(options: FakeOptions) {
@@ -104,7 +106,9 @@ function makePorts(options: FakeOptions) {
         }));
       const activeScriptHashes = req.scriptHashes.filter((hash) =>
         activeByHash.has(hash) || activeEvidence.has(hash));
-      const history = options.includeFundingHistory
+      const history = options.historyForSnapshot
+        ? options.historyForSnapshot(req.scriptHashes, snapshotRequests.length)
+        : options.includeFundingHistory
         ? baseUtxos.map((utxo) => ({
             txid: utxo.txid,
             height: utxo.height,
@@ -206,6 +210,63 @@ describe('scan engine (§8.2)', () => {
     // Round 2 fetches only the new external indexes 20..38 (18+1+20).
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests[1]).toHaveLength(19);
+  });
+
+  it('merges request-scoped history fragments for one transaction without losing value or activity', async () => {
+    const shared = {
+      txid: txidAt(999),
+      height: 249_000,
+      timestamp: null,
+      replacesTxid: null,
+      replacedByTxid: null,
+      confirmationState: 'confirmed' as const,
+      feeSats: '500',
+      vsize: null,
+      replaceable: null,
+      packageFeeSats: null,
+      packageVsize: null,
+      cpfpEligible: false,
+    };
+    const { ports } = makePorts({
+      activeExt: [],
+      activeEvidenceExt: [18],
+      historyForSnapshot: (hashes, call) => call === 1
+        ? [{ ...shared, fundedScriptHashes: [hashAt(0, 18)], spentScriptHashes: [], deltaSats: '1000' }]
+        : [{ ...shared, fundedScriptHashes: [], spentScriptHashes: [hashes[0]!], deltaSats: '-400' }],
+    });
+    const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 39, burnedChangeCount: 0 });
+    expect(result.ok).toBe(true);
+    expect(result.history).toEqual([expect.objectContaining({
+      txid: shared.txid,
+      fundedScriptHashes: [hashAt(0, 18)],
+      spentScriptHashes: [hashAt(0, 20)],
+      deltaSats: '600',
+    })]);
+  });
+
+  it('fails closed when history fragments for one transaction disagree on scalar facts', async () => {
+    const txid = txidAt(998);
+    const historyForSnapshot: FakeOptions['historyForSnapshot'] = (hashes, call) => [{
+      txid,
+      height: call === 1 ? 249_000 : 248_999,
+      timestamp: null,
+      fundedScriptHashes: call === 1 ? [hashAt(0, 18)] : [],
+      spentScriptHashes: call === 1 ? [] : [hashes[0]!],
+      deltaSats: call === 1 ? '1000' : '-400',
+      replacesTxid: null,
+      replacedByTxid: null,
+      confirmationState: 'confirmed',
+      feeSats: '500',
+      vsize: null,
+      replaceable: null,
+      packageFeeSats: null,
+      packageVsize: null,
+      cpfpEligible: false,
+    }];
+    const result = await scanUnit(UNIT, makePorts({
+      activeExt: [], activeEvidenceExt: [18], historyForSnapshot,
+    }).ports, { maxIndexPerChain: 39, burnedChangeCount: 0 });
+    expect(result).toMatchObject({ ok: false, failure: 'conflicting_sources', history: [] });
   });
 
   it('keeps a used zero-balance address active when its history is bounded', async () => {

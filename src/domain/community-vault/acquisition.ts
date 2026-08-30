@@ -19,6 +19,7 @@ import {
 } from './acquisition-contracts';
 import type { CommunityVaultPolicyV1 } from './contracts';
 import { assertCommunityVaultPolicy } from './policy';
+import { canonicalTaprootSignatureSighash } from '../transactions/taproot-signature';
 
 const ACQUISITION_DOMAIN = 'drey-community-vault-acquisition-v1';
 const MAX_PSBT_BYTES = 2_000_000;
@@ -720,7 +721,8 @@ function verifyPartialInputSignature(
   }
   const signature = actual.tapKeySig;
   if (!signature) return;
-  const sighash = signature.length === 64 ? SigHash.DEFAULT : signature.length === 65 ? signature[64]! : -1;
+  const sighash = canonicalTaprootSignatureSighash(signature);
+  if (sighash === null) throw new Error(`invalid acquisition Taproot signature at input ${index}`);
   if (sighash !== expected.sighashType) throw new Error(`acquisition Taproot sighash differs at input ${index}`);
   const message = tx.preimageWitnessV1(
     index,
@@ -755,10 +757,11 @@ function verifyInputSignature(tx: Transaction, plan: CommunityVaultAcquisitionPl
     return;
   }
   const signature = witness[0];
-  if (witness.length !== 1 || !signature || (signature.length !== 64 && signature.length !== 65)) {
+  if (witness.length !== 1 || !signature) {
     throw new Error(`unsupported acquisition Taproot witness at input ${index}`);
   }
-  const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
+  const sighash = canonicalTaprootSignatureSighash(signature);
+  if (sighash === null) throw new Error(`unsupported acquisition Taproot witness at input ${index}`);
   if (sighash !== expected.sighashType) throw new Error(`acquisition Taproot sighash differs at input ${index}`);
   const message = tx.preimageWitnessV1(
     index,

@@ -422,6 +422,43 @@ describe('encrypted crash-safe permission journal', () => {
     ).rejects.toMatchObject({ code: 'stale_revision' });
   });
 
+  it('serializes simultaneous appends so no reported-success event is overwritten', async () => {
+    const competingGrant: PermissionGrantEvent = {
+      ...grant(['balance']),
+      eventId: '40000000000000000000000000000004',
+      resourceId: '50000000000000000000000000000005',
+    };
+    const outcomes = await Promise.allSettled([
+      appendPermissionEvent({
+        area, storageKey: STORAGE_KEY, dek, vaultId: VAULT_ID, expectedRevision: 0, event: grant(),
+      }),
+      appendPermissionEvent({
+        area, storageKey: STORAGE_KEY, dek, vaultId: VAULT_ID, expectedRevision: 0, event: competingGrant,
+      }),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+    const rejected = outcomes.find((outcome) => outcome.status === 'rejected');
+    expect(rejected).toMatchObject({ status: 'rejected', reason: { code: 'stale_revision' } });
+    const loaded = await loadPermissionJournal(area, STORAGE_KEY, dek, VAULT_ID);
+    expect(loaded).toMatchObject({ status: 'ok', revision: 1 });
+    expect(loaded.events).toHaveLength(1);
+  });
+
+  it('releases the same-key queue after a failed append', async () => {
+    const invalid = { ...grant(), eventId: 'not-an-event-id' } as PermissionGrantEvent;
+    const [failed, succeeded] = await Promise.allSettled([
+      appendPermissionEvent({
+        area, storageKey: STORAGE_KEY, dek, vaultId: VAULT_ID, expectedRevision: 0, event: invalid,
+      }),
+      appendPermissionEvent({
+        area, storageKey: STORAGE_KEY, dek, vaultId: VAULT_ID, expectedRevision: 0, event: grant(),
+      }),
+    ]);
+    expect(failed).toMatchObject({ status: 'rejected', reason: { code: 'invalid_event' } });
+    expect(succeeded).toMatchObject({ status: 'fulfilled', value: { revision: 1 } });
+  });
+
   it('discards an unrelated staged record instead of replacing canonical authority', async () => {
     await appendPermissionEvent({
       area,

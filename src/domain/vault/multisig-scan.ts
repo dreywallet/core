@@ -63,7 +63,10 @@ export async function scanVaultPolicy(input: {
     snapshot: async (request) => {
       const response = await input.gateway.fetchSnapshot(request);
       if (response.ok) {
-        envelope ??= {
+        // scanUnit may discard a complete attempt and retry on revision skew.
+        // Retain the most recent successful snapshot so the returned source
+        // belongs to the attempt that can ultimately succeed.
+        envelope = {
           instanceId: response.value.instanceId,
           classificationRevision: response.value.classificationRevision,
           coreTip: response.value.coreTip,

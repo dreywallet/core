@@ -478,6 +478,10 @@ function assertCpfp(
       previousPlan.network !== plan.network || previousPlan.policyId !== plan.policyId ||
       previousPlan.planId === plan.planId || previousPlan.planDigest === plan.planDigest ||
       plan.replacement.parentTxid !== input.txid || input.branch !== 'change' ||
+      previousPlan.destination.kind !== plan.destination.kind ||
+      previousPlan.destination.address !== plan.destination.address ||
+      previousPlan.destination.pairedSpendingWalletIdHash !== plan.destination.pairedSpendingWalletIdHash ||
+      previousPlan.destination.targetPolicyId !== plan.destination.targetPolicyId ||
       !parentOutput || parentOutput.purpose !== 'vault-change' || parentOutput.valueSats !== input.valueSats ||
       parentOutput.scriptPubKeyHex !== input.scriptPubKeyHex || parentOutput.branch !== input.branch ||
       parentOutput.derivationIndex !== input.derivationIndex ||
@@ -514,6 +518,10 @@ export function validateVaultAssetPolicy(input: {
   if (plan.replacement.kind === 'rbf' &&
       BigInt(plan.feeRateSatPerKvB) > BigInt(MAX_FEE_RATE_SAT_PER_KVB)) {
     fail('rbf_policy', 'RBF fee rate exceeds the shared compiled maximum');
+  }
+  if (plan.replacement.kind !== 'rbf' &&
+      BigInt(plan.feeRateSatPerKvB) > BigInt(MAX_FEE_RATE_SAT_PER_KVB)) {
+    fail('ordinary_btc_policy', 'online Vault fee rate exceeds the shared compiled maximum');
   }
   assertFreshAndConsistent(plan, evidence, input.nowMs);
   evidence.inputs.forEach((item, index) => assertEvidenceInput(plan, item, index));

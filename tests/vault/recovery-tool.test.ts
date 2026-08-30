@@ -250,6 +250,24 @@ describe('the standalone recovery package', () => {
       })).toThrow(/belongs to this same Vault policy/u);
     });
 
+    it('uses the configured search depth for destination ownership too', () => {
+      const h = harness('signet');
+      const inputs = resolveInputs(h.identity, utxosFor(h, [{ branch: 'receive', index: 0, sats: '50000' }]));
+      const deepDestination = deriveVaultOutput(h.identity, 'change', 101).address;
+      expect(() => buildRecoveryPlan({
+        identity: h.identity, inputs, destinationAddress: deepDestination,
+        feeRateSatPerVb: 3n, searchDepth: 101, nowMs: CREATED,
+      })).toThrow(/belongs to this same Vault policy/u);
+      expect(() => buildRecoveryPlan({
+        identity: h.identity, inputs, destinationAddress: deepDestination,
+        feeRateSatPerVb: 3n, searchDepth: -1, nowMs: CREATED,
+      })).toThrow(/search depth/u);
+      expect(() => buildRecoveryPlan({
+        identity: h.identity, inputs, destinationAddress: exitAddress('signet'),
+        feeRateSatPerVb: 3n, searchDepth: RECOVERY_MAX_SEARCH_DEPTH + 1, nowMs: CREATED,
+      })).toThrow(/search depth/u);
+    });
+
     it('refuses dust change instead of absorbing it into the fee', () => {
       const h = harness('signet');
       const inputs = resolveInputs(h.identity, utxosFor(h, [{ branch: 'receive', index: 0, sats: '50000' }]));

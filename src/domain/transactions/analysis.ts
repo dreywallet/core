@@ -25,6 +25,7 @@ import {
   decodeSighash,
   type SighashAnalysis,
 } from './psbt-commitment';
+import { canonicalTaprootSignatureSighash } from './taproot-signature';
 
 export {
   decodeSighash,
@@ -243,7 +244,7 @@ function rawSighash(tx: Transaction, index: number, kind: ScriptKind): { raw: nu
   if (witness.length !== 1) return { raw: -1, scriptPath: witness.length > 1 };
   const signature = witness[0];
   if (!signature) return { raw: -1, scriptPath: false };
-  return { raw: signature.length === 64 ? 0 : signature.length === 65 ? signature[64]! : -1, scriptPath: false };
+  return { raw: canonicalTaprootSignatureSighash(signature) ?? -1, scriptPath: false };
 }
 
 function providerInputScriptKind(scriptPubKey: string): ProviderPsbtInputScriptType {

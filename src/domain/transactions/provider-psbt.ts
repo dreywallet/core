@@ -9,7 +9,8 @@ import { analyzePsbtHex, analyzeRawTransactionHex, decodeSighash, type Transacti
 import { estimateVsize, payableScriptKind, scriptKind } from './fees';
 import type { PlanDerivation, PlanInput, PlanOutput, TransactionPlan } from './plan';
 import type { InscriptionPreviewSet, StoredInscriptionPreviewSet } from './inscription-previews';
-import { approvalInscriptionItems, storedPreviewSet } from './inscription-previews';
+import { approvalInscriptionItems, cloneInscriptionPreviewSet, storedPreviewSet } from './inscription-previews';
+import { canonicalTaprootSignatureSighash } from './taproot-signature';
 import type { MarketplaceContext, MarketplaceResolution } from '../marketplaces/types';
 import { publicAccountFromSeed } from '../accounts/public-account';
 import {
@@ -1126,7 +1127,7 @@ export function bindProviderPsbtPlanPreviews(
     ...withoutHash,
     planHash: hash(JSON.stringify(canonical(withoutHash))),
   };
-  liveProviderPreviews.set(rebound, previews);
+  liveProviderPreviews.set(rebound, cloneInscriptionPreviewSet(previews));
   return rebound;
 }
 
@@ -1143,7 +1144,7 @@ export function providerPsbtPlanPreviews(plan: ProviderPsbtPlanV3): InscriptionP
             throw new Error('provider raster bytes unavailable');
           }
           return {
-            metadata: item.metadata,
+            metadata: { ...item.metadata, outpoint: { ...item.metadata.outpoint } },
             preview: { ...item.preview, bytesBase64: null },
           };
         }),
@@ -1151,7 +1152,7 @@ export function providerPsbtPlanPreviews(plan: ProviderPsbtPlanV3): InscriptionP
     }
     throw new Error('provider inscription preview bytes unavailable');
   }
-  return previews;
+  return cloneInscriptionPreviewSet(previews);
 }
 
 export function reattachProviderPsbtPlanPreviews(
@@ -1165,7 +1166,7 @@ export function reattachProviderPsbtPlanPreviews(
         JSON.stringify(plan.inscriptionPreviews)) {
     throw new Error('provider inscription preview provenance changed');
   }
-  liveProviderPreviews.set(plan, previews);
+  liveProviderPreviews.set(plan, cloneInscriptionPreviewSet(previews));
 }
 
 function signProviderPsbtPlanInternal(input: {
@@ -1460,8 +1461,9 @@ export function validateProviderTransactionHex(plan: ProviderPsbtPlanV3, transac
     } else {
       if (witness.length !== 1) throw new Error('unsupported provider Taproot witness');
       const signature = witness[0];
-      if (!signature || (signature.length !== 64 && signature.length !== 65)) throw new Error('invalid provider Taproot signature');
-      const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
+      if (!signature) throw new Error('invalid provider Taproot signature');
+      const sighash = canonicalTaprootSignatureSighash(signature);
+      if (sighash === null) throw new Error('invalid provider Taproot signature');
       if (sighash !== expected.sighash) throw new Error('provider Taproot witness sighash differs from plan');
       const preimage = tx.preimageWitnessV1(index, scripts, sighash, amounts);
       if (!schnorr.verify(signature.slice(0, 64), preimage, hexToBytes(expected.scriptPubKey).slice(2))) {
@@ -1500,8 +1502,8 @@ function verifyProviderPartialSignatures(tx: Transaction, plan: ProviderPsbtPlan
         const version = scriptWithVersion.at(-1)!;
         const sellerKey = hexToBytes(planned.derivation.publicKeyHex).slice(1);
         const signed = actual.tapScriptSig?.find(([key]) => bytesToHex(key.pubKey) === bytesToHex(sellerKey));
-        if (!signed || (signed[1].length !== 65 && planned.sighash !== SigHash.DEFAULT) ||
-            (signed[1].length === 65 && signed[1].at(-1) !== planned.sighash)) {
+        const sighash = signed ? canonicalTaprootSignatureSighash(signed[1]) : null;
+        if (!signed || sighash === null || sighash !== planned.sighash) {
           throw new Error('missing Taproot script-path partial signature');
         }
         const preimage = tx.preimageWitnessV1(index, scripts, planned.sighash, amounts, undefined, script, version);
@@ -1511,8 +1513,9 @@ function verifyProviderPartialSignatures(tx: Transaction, plan: ProviderPsbtPlan
         continue;
       }
       const signature = actual.tapKeySig;
-      if (!signature || (signature.length !== 64 && signature.length !== 65)) throw new Error('missing Taproot signature');
-      const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
+      if (!signature) throw new Error('missing Taproot signature');
+      const sighash = canonicalTaprootSignatureSighash(signature);
+      if (sighash === null) throw new Error('missing Taproot signature');
       if (sighash !== planned.sighash) throw new Error('Taproot sighash differs from plan');
       const preimage = tx.preimageWitnessV1(index, scripts, sighash, amounts);
       if (!schnorr.verify(signature.slice(0, 64), preimage, hexToBytes(planned.scriptPubKey).slice(2))) {

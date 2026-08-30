@@ -4,6 +4,7 @@ import { hash160 } from '@scure/btc-signer/utils';
 
 import { bytesToHex, hexToBytes } from '../vault/encoding';
 import type { CommunityVaultSaleBuyerInputV1 } from './sale-contracts';
+import { canonicalTaprootSignatureSighash } from '../transactions/taproot-signature';
 
 export function assertCommunityVaultBuyerInput(input: CommunityVaultSaleBuyerInputV1): void {
   const kind = /^0014[0-9a-f]{40}$/u.test(input.scriptPubKeyHex) ? 'p2wpkh'
@@ -54,10 +55,13 @@ export function verifyCommunityVaultBuyerInput(input: {
     return;
   }
   const signature = witness[0];
-  if (witness.length !== 1 || !signature || (signature.length !== 64 && signature.length !== 65)) {
+  if (witness.length !== 1 || !signature) {
     throw new Error(`Community Vault buyer input ${input.inputIndex} is not exactly funded`);
   }
-  const sighash = signature.length === 64 ? SigHash.DEFAULT : signature[64]!;
+  const sighash = canonicalTaprootSignatureSighash(signature);
+  if (sighash === null) {
+    throw new Error(`Community Vault buyer input ${input.inputIndex} is not exactly funded`);
+  }
   if (sighash !== expected.sighashType) {
     throw new Error(`Community Vault buyer input ${input.inputIndex} sighash differs`);
   }

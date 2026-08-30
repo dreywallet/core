@@ -84,6 +84,14 @@ describe('M7 deterministic coin selection', () => {
     expect(economic.feeSats).toBe(282n);
   });
 
+  it('returns economic change instead of donating more sats to miners', () => {
+    const burnsExcess = coin('a', 20_513n);
+    const returnsChange = coin('b', 20_577n);
+    const selected = selectCoins(request([burnsExcess, returnsChange]));
+    expect(selected.inputs).toEqual([returnsChange]);
+    expect(selected).toMatchObject({ feeSats: 282n, changeSats: 295n });
+  });
+
   it('uses CompactSize-aware conservative bounds for 1, 100, and 500 inputs', () => {
     expect(estimateVsize([P2WPKH], [P2WPKH])).toBe(110n);
     expect(estimateVsize(Array.from({ length: 100 }, () => P2WPKH), [P2WPKH])).toBe(6_842n);
@@ -113,8 +121,8 @@ describe('M7 deterministic coin selection', () => {
   });
 
   it('never lets the label preference cost the user sats (§14.1)', () => {
-    // The cheap option merges two groups; the single-group option wastes 8k
-    // more. Waste is compared first, so the cheap merging option must win.
+    // The two-input option can stay inside one label group, but the single
+    // input has lower current-plus-future fee cost and must still win.
     const coins = [coin('a', 8_000n), coin('b', 8_000n), coin('c', 24_000n)];
     const labelGroupByOutpoint = new Map([
       [`${'a'.repeat(64)}:0`, 'savings|'],
@@ -125,7 +133,7 @@ describe('M7 deterministic coin selection', () => {
       ...request(coins), targetSats: 15_000n, labelGroupByOutpoint,
     });
     expect(selected.inputs.map((input) => input.outpoint.txid))
-      .toEqual(['a'.repeat(64), 'b'.repeat(64)]);
+      .toEqual(['c'.repeat(64)]);
   });
 
   it('leaves selection untouched when nothing is labeled', () => {

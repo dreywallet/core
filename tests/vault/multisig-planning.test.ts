@@ -21,6 +21,7 @@ import {
   VaultPlanBuildError,
 } from '../../src/domain/vault/multisig-planning';
 import { validateVaultAssetPolicy } from '../../src/domain/vault/multisig-asset-policy';
+import { MAX_FEE_RATE_SAT_PER_KVB } from '../../src/domain/transactions/fees';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
 
 beforeAll(installTestCryptoProvider);
@@ -138,6 +139,31 @@ describe('coordinator-neutral Vault planning', () => {
       amountSats: '50000',
     });
     expect(built.selected).toHaveLength(2);
+  });
+
+  it('converges across more than four fee-driven input expansions', () => {
+    const utxos = [
+      vaultUtxo({ txid: '91'.repeat(32), valueSats: '50000', index: 0 }),
+      ...Array.from({ length: 20 }, (_, index) => vaultUtxo({
+        txid: (0xa0 + index).toString(16).padStart(2, '0').repeat(32),
+        valueSats: '600',
+        index: index + 1,
+      })),
+    ];
+    const built = buildVaultCardinalWithdrawal({ ...base(), utxos, amountSats: '50000' });
+    expect(built.selected.length).toBeGreaterThan(5);
+    expect(validateVaultAssetPolicy({
+      policy: POLICY, plan: built.plan, psbtHex: built.psbtHex, evidence: built.evidence, nowMs: NOW,
+    }).movement).toBe('cardinal');
+  }, 15_000);
+
+  it('rejects online fee rates above the shared ceiling before building', () => {
+    expect(() => buildVaultCardinalWithdrawal({
+      ...base(),
+      feeRateSatPerKvB: String(MAX_FEE_RATE_SAT_PER_KVB + 1),
+      utxos: [vaultUtxo({ txid: '92'.repeat(32), valueSats: '150000', index: 0 })],
+      amountSats: '50000',
+    })).toThrow(/online Vault maximum/u);
   });
 
   it('moves one complete inscription UTXO and pays fees only from clean inputs', () => {

@@ -365,6 +365,23 @@ describe('ADR 0007 B3 property and adversarial safety invariants', () => {
     expectPolicyError(() => validate('signet', excessiveRate), 'rbf_policy');
   });
 
+  it('applies the shared fee ceiling to every online non-RBF plan', () => {
+    for (const name of ['ordinary', 'cpfp'] as const) {
+      const excessiveRate = rebindPlan(vectors.records.signet.cases[name], (plan) => {
+        plan.feeRateSatPerKvB = String(MAX_FEE_RATE_SAT_PER_KVB + 1);
+      });
+      expectPolicyError(() => validate('signet', excessiveRate), 'ordinary_btc_policy');
+    }
+  });
+
+  it('binds CPFP to the parent destination identity', () => {
+    const base = vectors.records.signet.cases.cpfp;
+    const changed = rebindPlan(base, (plan) => {
+      plan.destination.pairedSpendingWalletIdHash = 'ab'.repeat(32);
+    });
+    expectPolicyError(() => validate('signet', changed), 'cpfp_policy');
+  });
+
   it('rejects an appended RBF input that spends an output of the replaced transaction', () => {
     const base = vectors.records.signet.cases.rbf;
     const previous = base.previousPlan!;

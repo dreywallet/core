@@ -101,16 +101,11 @@ function calculate(
   };
 }
 
-/**
- * Excess over the target: everything the inputs carry beyond what the recipient
- * receives, whether it comes back as change or is dumped into the fee. Both
- * branches of calculate() give the same value for a given input set — change is
- * exactly `total - target - fee` — so this ranks input sets, not fee/change
- * splits. Ties break on input count in selectCoins.
- */
-function waste(selection: CoinSelection): bigint {
-  return selection.inputs.reduce((sum, utxo) => sum + utxo.valueSats, 0n)
-    - selection.recipientSats;
+/** Immediate miner fee plus the estimated future fee to spend created change. */
+function waste(selection: CoinSelection, changeScript: string, feeRate: bigint): bigint {
+  return selection.feeSats + (selection.changeSats > 0n
+    ? feeForVsize(inputVbytes(changeScript), feeRate)
+    : 0n);
 }
 
 /**
@@ -220,8 +215,8 @@ export function selectCoins(req: CoinSelectionRequest): CoinSelection {
   // unchanged for a user who has never opened the UTXO manager.
   const labelGroups = req.labelGroupByOutpoint ?? NO_LABEL_GROUPS;
   options.sort((a, b) => {
-    const aw = waste(a);
-    const bw = waste(b);
+    const aw = waste(a, req.changeScript, req.feeRate);
+    const bw = waste(b, req.changeScript, req.feeRate);
     if (aw !== bw) return aw < bw ? -1 : 1;
     const ag = distinctLabelGroups(a, labelGroups);
     const bg = distinctLabelGroups(b, labelGroups);

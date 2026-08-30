@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NETWORK, TEST_NETWORK, WIF, p2tr, p2wpkh } from '@scure/btc-signer';
+import { NETWORK, RawWitness, TEST_NETWORK, WIF, p2tr, p2wpkh } from '@scure/btc-signer';
 import { pubECDSA } from '@scure/btc-signer/utils';
 import {
   BIP322_MAX_MESSAGE_BYTES,
@@ -9,7 +9,7 @@ import {
   validateBip322Message,
   verifyBip322Simple,
 } from '../../src/domain/transactions/bip322';
-import { bytesToHex } from '../../src/domain/vault/encoding';
+import { base64ToBytes, bytesToBase64, bytesToHex } from '../../src/domain/vault/encoding';
 
 // Current official vectors:
 // https://github.com/bitcoin/bips/tree/master/bip-0322
@@ -111,6 +111,10 @@ describe('BIP322 simple', () => {
     expect(verifyBip322Simple(P2TR.message, P2TR.address, 'mainnet', P2TR.signature.slice(3))).toBe(false);
     expect(verifyBip322Simple(P2TR.message, P2TR.address, 'mainnet', 'smpnot-base64')).toBe(false);
     expect(verifyBip322Simple(P2TR.message, P2TR.address, 'mainnet', `${P2TR.signature.slice(0, -1)}A`)).toBe(false);
+    const witness = RawWitness.decode(base64ToBytes(P2TR.signature.slice(3)));
+    witness[0] = new Uint8Array([...witness[0]!, 0]);
+    const explicitDefault = `smp${bytesToBase64(RawWitness.encode(witness))}`;
+    expect(verifyBip322Simple(P2TR.message, P2TR.address, 'mainnet', explicitDefault)).toBe(false);
   });
 
   it('enforces Drey UTF-8 byte, NUL, control, and malformed-Unicode policy', () => {

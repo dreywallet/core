@@ -16,7 +16,12 @@ import type {
   WalletSnapshotRequest,
   WalletScanSnapshotResponse,
 } from '../domain/gateway/contract';
-import { CLASSIFY_MAX_OUTPOINTS, SNAPSHOT_MAX_SCRIPT_HASHES } from '../domain/gateway/contract';
+import {
+  CLASSIFY_MAX_OUTPOINTS,
+  SNAPSHOT_MAX_ORDINAL_FLOW_EDGES_PER_TX,
+  SNAPSHOT_MAX_SCRIPT_HASHES,
+  snapshotHistoryEntrySchema,
+} from '../domain/gateway/contract';
 import type { FetchSignedResult } from '../gateway-client';
 import type { Network } from '../domain/keys/derivation';
 import { isSuspiciousDust } from '../domain/classification/dust';
@@ -104,6 +109,61 @@ function nextWindowEnd(state: WindowState, cap: number): number | null {
   const satisfiedAt = state.highestActive + 1 + GAP_LIMIT;
   if (satisfiedAt <= state.to) return null;
   return Math.min(satisfiedAt, cap);
+}
+
+function mergeHistoryEntry(
+  previous: SnapshotHistoryEntry,
+  next: SnapshotHistoryEntry,
+): SnapshotHistoryEntry | null {
+  if (JSON.stringify(previous) === JSON.stringify(next)) return previous;
+  const scalarFields = [
+    'txid', 'height', 'timestamp', 'replacesTxid', 'replacedByTxid', 'confirmationState',
+    'feeSats', 'vsize', 'replaceable', 'packageFeeSats', 'packageVsize', 'cpfpEligible',
+  ] as const;
+  if (scalarFields.some((field) => previous[field] !== next[field]) ||
+      JSON.stringify(previous.activitySource) !== JSON.stringify(next.activitySource)) return null;
+
+  const previousHashes = new Set([...previous.fundedScriptHashes, ...previous.spentScriptHashes]);
+  if ([...next.fundedScriptHashes, ...next.spentScriptHashes].some((hash) => previousHashes.has(hash))) {
+    return null;
+  }
+
+  let ordinalFlow = previous.ordinalFlow;
+  if (previous.ordinalFlow === undefined || next.ordinalFlow === undefined) {
+    if (previous.ordinalFlow !== next.ordinalFlow) return null;
+  } else if (previous.ordinalFlow.kind === 'unavailable' || next.ordinalFlow.kind === 'unavailable') {
+    ordinalFlow = {
+      kind: 'unavailable',
+      reason: previous.ordinalFlow.kind === 'unavailable' && previous.ordinalFlow.reason === 'transaction_limit' ||
+        next.ordinalFlow.kind === 'unavailable' && next.ordinalFlow.reason === 'transaction_limit'
+        ? 'transaction_limit'
+        : 'response_budget',
+    };
+  } else {
+    const edges = new Map<string, (typeof previous.ordinalFlow.edges)[number]>();
+    for (const edge of [...previous.ordinalFlow.edges, ...next.ordinalFlow.edges]) {
+      const key = JSON.stringify({ source: edge.source, destination: edge.destination, lengthSats: edge.lengthSats });
+      const prior = edges.get(key);
+      edges.set(key, prior ? {
+        ...prior,
+        sourceRequested: prior.sourceRequested || edge.sourceRequested,
+        destinationRequested: prior.destinationRequested || edge.destinationRequested,
+      } : edge);
+    }
+    ordinalFlow = edges.size > SNAPSHOT_MAX_ORDINAL_FLOW_EDGES_PER_TX
+      ? { kind: 'unavailable', reason: 'transaction_limit' }
+      : { kind: 'complete', edges: [...edges.values()] };
+  }
+
+  const candidate = {
+    ...previous,
+    fundedScriptHashes: [...previous.fundedScriptHashes, ...next.fundedScriptHashes],
+    spentScriptHashes: [...previous.spentScriptHashes, ...next.spentScriptHashes],
+    deltaSats: String(BigInt(previous.deltaSats) + BigInt(next.deltaSats)),
+    ...(ordinalFlow === undefined ? {} : { ordinalFlow }),
+  };
+  const parsed = snapshotHistoryEntrySchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function scanUnit(
@@ -229,7 +289,14 @@ async function scanUnitOnce(
       w.highestActive = Math.max(w.highestActive ?? -1, where.index);
     }
     for (const entry of body.history) {
-      historyByTxid.set(entry.txid, entry);
+      const previous = historyByTxid.get(entry.txid);
+      if (previous) {
+        const merged = mergeHistoryEntry(previous, entry);
+        if (!merged) return emptyResult('conflicting_sources');
+        historyByTxid.set(entry.txid, merged);
+      } else {
+        historyByTxid.set(entry.txid, entry);
+      }
       for (const scriptHash of [...entry.fundedScriptHashes, ...entry.spentScriptHashes]) {
         const where = roundHashIndex.get(scriptHash);
         if (!where) return emptyResult('conflicting_sources');

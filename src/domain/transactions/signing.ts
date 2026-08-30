@@ -17,6 +17,7 @@ import { publicAccountFromSeed } from '../accounts/public-account';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 import { canonicalOrdinalBatchSelections } from './ordinal-transfer';
 import { resolveOrdinalPostageTarget } from './postage-manage';
+import { canonicalTaprootSignatureSighash } from './taproot-signature';
 
 /** MAX_STANDARD_TX_WEIGHT / 4, conservative because vsize rounds weight up. */
 export const MAX_STANDARD_TRANSACTION_VSIZE = 100_000n;
@@ -200,10 +201,11 @@ function verifySerializedSignatures(tx: Transaction, plan: TransactionPlan): voi
     } else {
       if (witness.length !== 1) throw new Error('unsupported Taproot script-path witness');
       const signatureWithType = witness[0];
-      if (!signatureWithType || (signatureWithType.length !== 64 && signatureWithType.length !== 65)) {
+      if (!signatureWithType) {
         throw new Error('invalid Taproot witness');
       }
-      const sighash = signatureWithType.length === 64 ? 0 : signatureWithType[64]!;
+      const sighash = canonicalTaprootSignatureSighash(signatureWithType);
+      if (sighash === null) throw new Error('invalid Taproot witness');
       if (sighash !== expected.sighash) throw new Error('Taproot sighash differs from plan');
       const message = tx.preimageWitnessV1(index, prevoutScripts, sighash, amounts);
       const outputKey = hexToBytes(expected.scriptPubKey).slice(2);

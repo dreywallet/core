@@ -32,7 +32,7 @@ const observedAtMs = Date.parse(base.mempoolObservedAt);
 
 describe('evaluateFreshness (§18.4)', () => {
   it('reports fully fresh when all tips agree, heartbeat is recent, revision active', () => {
-    expect(evaluateFreshness(base, observedAtMs)).toEqual({
+    expect(evaluateFreshness(base, observedAtMs, observedAtMs)).toEqual({
       commonTip: true,
       heartbeatFresh: true,
       revisionActive: true,
@@ -43,22 +43,22 @@ describe('evaluateFreshness (§18.4)', () => {
   });
 
   it('detects an ord index lagging behind core', () => {
-    const report = evaluateFreshness({ ...base, ordTip: tip(99, 'a') }, observedAtMs);
+    const report = evaluateFreshness({ ...base, ordTip: tip(99, 'a') }, observedAtMs, observedAtMs);
     expect(report.commonTip).toBe(false);
     expect(report.spendEligible).toBe(false);
   });
 
   it('detects a hash mismatch at the same height (reorg reconciliation)', () => {
-    const report = evaluateFreshness({ ...base, historyTip: tip(100, 'b') }, observedAtMs);
+    const report = evaluateFreshness({ ...base, historyTip: tip(100, 'b') }, observedAtMs, observedAtMs);
     expect(report.commonTip).toBe(false);
   });
 
   it('treats a heartbeat at exactly 30 000 ms as fresh and 30 001 ms as stale', () => {
     expect(
-      evaluateFreshness(base, observedAtMs + MEMPOOL_HEARTBEAT_MAX_AGE_MS).heartbeatFresh,
+      evaluateFreshness(base, observedAtMs + MEMPOOL_HEARTBEAT_MAX_AGE_MS, observedAtMs).heartbeatFresh,
     ).toBe(true);
     expect(
-      evaluateFreshness(base, observedAtMs + MEMPOOL_HEARTBEAT_MAX_AGE_MS + 1).heartbeatFresh,
+      evaluateFreshness(base, observedAtMs + MEMPOOL_HEARTBEAT_MAX_AGE_MS + 1, observedAtMs).heartbeatFresh,
     ).toBe(false);
   });
 
@@ -67,7 +67,7 @@ describe('evaluateFreshness (§18.4)', () => {
       ...base,
       mempoolObservedAt: new Date(observedAtMs + 1).toISOString(),
     };
-    expect(evaluateFreshness(futureHeartbeat, observedAtMs).heartbeatFresh).toBe(false);
+    expect(evaluateFreshness(futureHeartbeat, observedAtMs, observedAtMs).heartbeatFresh).toBe(false);
   });
 
   it('accepts a freshly verified response when the signed server clock is slightly ahead', () => {
@@ -109,12 +109,12 @@ describe('evaluateFreshness (§18.4)', () => {
       },
     };
 
-    expect(evaluateFreshness(v2, observedAtMs).heartbeatFresh).toBe(true);
-    expect(evaluateFreshness(v2, observedAtMs).spendEligible).toBe(true);
+    expect(evaluateFreshness(v2, observedAtMs, observedAtMs).heartbeatFresh).toBe(true);
+    expect(evaluateFreshness(v2, observedAtMs, observedAtMs).spendEligible).toBe(true);
   });
 
   it('detects a superseded classification revision', () => {
-    const report = evaluateFreshness({ ...base, activeRevision: 'rev-2' }, observedAtMs);
+    const report = evaluateFreshness({ ...base, activeRevision: 'rev-2' }, observedAtMs, observedAtMs);
     expect(report.revisionActive).toBe(false);
     expect(report.spendEligible).toBe(false);
   });
@@ -123,6 +123,7 @@ describe('evaluateFreshness (§18.4)', () => {
     const broken = evaluateFreshness(
       { ...base, ordTip: tip(99, 'a'), activeRevision: 'rev-2' },
       observedAtMs + MEMPOOL_HEARTBEAT_MAX_AGE_MS + 1,
+      observedAtMs,
     );
     expect(broken).toEqual({
       commonTip: false,
@@ -142,6 +143,20 @@ describe('evaluateFreshness (§18.4)', () => {
         core: { initialBlockDownload: false, headersSynced: true, txindexSynced: true, peersReady: true, mempoolLoaded: true },
         coherentCoreSampling: true, commonTip: true, mempoolFresh: true, reorgState: 'clear' as const,
         classificationState: 'active' as const, capacityState: 'ready' as const, signingKeyAvailable: true as const } };
-    expect(evaluateFreshness(v2, observedAtMs)).toMatchObject({ walletDataFresh: true, spendingReady: false, spendEligible: false });
+    expect(evaluateFreshness(v2, observedAtMs, observedAtMs)).toMatchObject({ walletDataFresh: true, spendingReady: false, spendEligible: false });
+  });
+
+  it('fails freshness closed when the local clock moves backward after verification', () => {
+    expect(evaluateFreshness(base, observedAtMs - 1, observedAtMs)).toMatchObject({
+      heartbeatFresh: false,
+      spendEligible: false,
+    });
+  });
+
+  it('fails freshness closed for a non-finite local verification instant', () => {
+    expect(evaluateFreshness(base, observedAtMs, Number.NaN)).toMatchObject({
+      heartbeatFresh: false,
+      spendEligible: false,
+    });
   });
 });

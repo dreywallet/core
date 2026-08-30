@@ -33,7 +33,7 @@ function sameTip(a: Tip, b: Tip): boolean {
 export function evaluateFreshness(
   status: StatusCapabilities,
   nowMs: number,
-  verifiedAtMs = Date.parse(status.serverTime),
+  verifiedAtMs: number,
 ): FreshnessReport {
   const commonTip =
     sameTip(status.coreTip, status.indexTip) &&
@@ -46,12 +46,13 @@ export function evaluateFreshness(
   // millisecond-scale host/browser clock skew.
   const heartbeatAgeAtVerification =
     Date.parse(status.serverTime) - Date.parse(status.mempoolObservedAt);
-  const elapsedSinceVerification = Math.max(0, nowMs - verifiedAtMs);
+  const elapsedSinceVerification = nowMs - verifiedAtMs;
   const heartbeatAge = heartbeatAgeAtVerification + elapsedSinceVerification;
   // A heartbeat ahead of the signed server time is inconsistent data.
   const heartbeatFresh =
     Number.isFinite(heartbeatAgeAtVerification) &&
     Number.isFinite(elapsedSinceVerification) &&
+    elapsedSinceVerification >= 0 &&
     heartbeatAgeAtVerification >= 0 &&
     heartbeatAge >= 0 &&
     heartbeatAge <= MEMPOOL_HEARTBEAT_MAX_AGE_MS;

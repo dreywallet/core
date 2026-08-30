@@ -67,6 +67,13 @@ export const MIN_CHANGE_SATS = 1_000n;
 
 /** Default depth searched on each branch when locating a supplied outpoint. */
 export const DEFAULT_SEARCH_DEPTH = 100;
+export const RECOVERY_MAX_SEARCH_DEPTH = 100_000;
+
+function assertRecoverySearchDepth(searchDepth: number): void {
+  if (!Number.isSafeInteger(searchDepth) || searchDepth < 0 || searchDepth > RECOVERY_MAX_SEARCH_DEPTH) {
+    throw new Error(`recovery search depth must be between 0 and ${RECOVERY_MAX_SEARCH_DEPTH}`);
+  }
+}
 
 /** 180 days. An offline signer may take a long time to reach the plan. */
 export const DEFAULT_PLAN_WINDOW_MS = 180n * 24n * 60n * 60n * 1000n;
@@ -113,6 +120,7 @@ export function resolveInputs(
   utxos: readonly SuppliedUtxo[],
   searchDepth = DEFAULT_SEARCH_DEPTH,
 ): ResolvedInput[] {
+  assertRecoverySearchDepth(searchDepth);
   if (utxos.length === 0) throw new Error('the supplied UTXO set is empty');
   const seen = new Set<string>();
   return utxos.map((utxo) => {
@@ -170,6 +178,8 @@ export interface BuildRecoveryPlanRequest {
   amountSats?: bigint;
   /** Change branch index used when `amountSats` is given. */
   changeIndex?: number;
+  /** Derivation depth used to reject destinations owned by this same Vault. */
+  searchDepth?: number;
   nowMs?: bigint;
   windowMs?: bigint;
   /**
@@ -204,7 +214,13 @@ export function buildRecoveryPlan(request: BuildRecoveryPlanRequest): BuiltRecov
       'A recovery exit sends to a wallet you control outside this Vault.',
     );
   }
-  const ownsDestination = locateScript(identity, destination.value.scriptPubKey, DEFAULT_SEARCH_DEPTH);
+  const searchDepth = request.searchDepth ?? DEFAULT_SEARCH_DEPTH;
+  assertRecoverySearchDepth(searchDepth);
+  const ownsDestination = locateScript(
+    identity,
+    destination.value.scriptPubKey,
+    searchDepth,
+  );
   if (ownsDestination) {
     throw new Error(
       'the destination address belongs to this same Vault policy. A recovery exit moves funds out of the ' +

@@ -26,6 +26,16 @@ export interface StoredInscriptionPreviewSet extends Omit<InscriptionPreviewSet,
   }>;
 }
 
+export function cloneInscriptionPreviewSet(previews: InscriptionPreviewSet): InscriptionPreviewSet {
+  return {
+    ...previews,
+    items: previews.items.map((item) => ({
+      metadata: { ...item.metadata, outpoint: { ...item.metadata.outpoint } },
+      preview: { ...item.preview },
+    })),
+  };
+}
+
 export type ApprovalInscriptionPreview =
   | {
       kind: 'raster';
@@ -116,18 +126,15 @@ export function bindInscriptionPreviews(input: {
       throw new Error('inscription preview identity mismatch');
     }
   }
-  return {
+  return cloneInscriptionPreviewSet({
     transactionCommitmentHash: response.transactionCommitmentHash,
     analysisHash: response.analysisHash,
     psbtHash: response.psbtHash,
     effectSetHash: response.effectSetHash,
     classificationRevision: response.classificationRevision,
     verifiedAtMs: input.verifiedAtMs,
-    items: response.items.map((item) => ({
-      metadata: { ...item.metadata, outpoint: { ...item.metadata.outpoint } },
-      preview: { ...item.preview },
-    })),
-  };
+    items: response.items,
+  });
 }
 
 export function storedPreviewSet(previews: InscriptionPreviewSet): StoredInscriptionPreviewSet {

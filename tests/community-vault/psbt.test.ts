@@ -4,6 +4,7 @@ import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
 import { bytesToHex, hexToBytes } from '../../src/domain/vault/encoding';
 import {
   approveCommunityVaultSpend,
+  assertCommunityVaultSpendPlan,
   combineCommunityVaultPsbts,
   finalizeCommunityVaultPsbt,
   validateCommunityVaultPsbt,
@@ -28,6 +29,13 @@ function approveOwners(count: number) {
 }
 
 describe('Community Vault v1 BIP371 PSBT', () => {
+  it('rejects duplicate base-plan outpoints before PSBT processing', () => {
+    const { policy } = fixturePolicy();
+    const plan = structuredClone(fixtureSpendPlan(policy));
+    plan.inputs.push({ ...plan.inputs[1]! });
+    expect(() => assertCommunityVaultSpendPlan(plan)).toThrow(/duplicate input/u);
+  });
+
   it('adds every unit signature owned by one owner under one approval', () => {
     const { policy, roots } = fixturePolicy();
     const plan = fixtureSpendPlan(policy);
@@ -125,5 +133,14 @@ describe('Community Vault v1 BIP371 PSBT', () => {
     expect(() => verifyFinalizedCommunityVaultTransaction({
       policy: at68.policy, plan: at68.plan, transactionHex: mutatedRaw,
     })).toThrow(/invalid finalized/u);
+
+    const ordinaryWitness = raw.getInput(1).finalScriptWitness!;
+    const ordinarySignature = ordinaryWitness[0]!.slice();
+    ordinarySignature[10] = (ordinarySignature[10] ?? 0) ^ 0x01;
+    raw.updateInput(1, { finalScriptWitness: [ordinarySignature, ordinaryWitness[1]!] }, true);
+    const mutatedOrdinary = bytesToHex(raw.toBytes(true, true));
+    expect(() => verifyFinalizedCommunityVaultTransaction({
+      policy: at68.policy, plan: at68.plan, transactionHex: mutatedOrdinary,
+    })).toThrow(/ordinary input 1/u);
   }, 10_000);
 });

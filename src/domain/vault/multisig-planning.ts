@@ -8,7 +8,7 @@
  */
 import { Transaction } from '@scure/btc-signer';
 import { BIP32_MAX_INDEX, bitcoinNetwork, type Network } from '../keys/derivation';
-import { scriptDustSats } from '../transactions/fees';
+import { MAX_FEE_RATE_SAT_PER_KVB, scriptDustSats } from '../transactions/fees';
 import { createVaultAssetSafePartialSignatureInput, type VaultAssetPolicyEvidenceV1 } from './multisig-asset-policy';
 import type {
   VaultPolicyIdentityV1,
@@ -139,18 +139,23 @@ function addressScriptHex(address: string, network: Network): string {
   return bytesToHex(script);
 }
 
-export function selectVaultCardinalInputs(
+function eligibleVaultCardinalInputs(
   utxos: readonly VaultUtxoV1[],
-  targetSats: bigint,
   excludedOutpoints: ReadonlySet<string> = new Set(),
 ): VaultUtxoV1[] {
-  const eligible = utxos
+  return utxos
     .filter((utxo) =>
       !excludedOutpoints.has(`${utxo.txid}:${utxo.vout}`) &&
       utxo.refusal === null &&
       utxo.primaryClass === 'cardinal_clean' &&
       utxo.inscriptions.length === 0)
     .sort((left, right) => BigInt(right.valueSats) > BigInt(left.valueSats) ? 1 : -1);
+}
+
+function selectEligibleVaultCardinalInputs(
+  eligible: readonly VaultUtxoV1[],
+  targetSats: bigint,
+): VaultUtxoV1[] {
   if (eligible.length === 0 && targetSats > 0n) {
     throw new VaultPlanBuildError('no_spendable_inputs', 'no proven-clean cardinal Vault inputs');
   }
@@ -163,6 +168,17 @@ export function selectVaultCardinalInputs(
   }
   if (targetSats === 0n) return [];
   throw new VaultPlanBuildError('insufficient_funds', 'Vault cardinal balance cannot fund this plan');
+}
+
+export function selectVaultCardinalInputs(
+  utxos: readonly VaultUtxoV1[],
+  targetSats: bigint,
+  excludedOutpoints: ReadonlySet<string> = new Set(),
+): VaultUtxoV1[] {
+  return selectEligibleVaultCardinalInputs(
+    eligibleVaultCardinalInputs(utxos, excludedOutpoints),
+    targetSats,
+  );
 }
 
 export interface VaultPlanRequestBase {
@@ -200,6 +216,9 @@ function assertBase(request: VaultPlanRequestBase): {
   assertVaultOwnership(request.policy, change);
   const feeRate = BigInt(request.feeRateSatPerKvB);
   if (feeRate <= 0n) throw new VaultPlanBuildError('insufficient_funds', 'fee rate must be positive');
+  if (feeRate > BigInt(MAX_FEE_RATE_SAT_PER_KVB)) {
+    throw new VaultPlanBuildError('insufficient_funds', 'fee rate exceeds the online Vault maximum');
+  }
   return { destinationScript, change, feeRate };
 }
 
@@ -297,10 +316,14 @@ export function buildVaultCardinalWithdrawal(
   const { destinationScript, change, feeRate } = assertBase(request);
   const amount = BigInt(request.amountSats);
   if (amount <= 0n) throw new VaultPlanBuildError('insufficient_funds', 'withdrawal amount must be positive');
-  let selected = selectVaultCardinalInputs(request.utxos, amount);
+  const eligible = eligibleVaultCardinalInputs(request.utxos);
+  let selected = selectEligibleVaultCardinalInputs(eligible, amount);
   let withChange = true;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  // Each unsuccessful pass either adds at least one input or removes the
+  // provisional change output. Both transitions are finite, so the eligible
+  // input count is the natural bound rather than an arbitrary retry count.
+  for (let attempt = 0; attempt < request.utxos.length + 2; attempt += 1) {
     const witnessScripts = selected.map((utxo) =>
       deriveVaultOutput(request.policy, utxo.branch, utxo.derivationIndex).witnessScriptHex);
     const inputTotal = selected.reduce((sum, utxo) => sum + BigInt(utxo.valueSats), 0n);
@@ -316,7 +339,7 @@ export function buildVaultCardinalWithdrawal(
     const fee = feeForVsize(feeRate, sizing.vsize);
     const changeSats = inputTotal - amount - fee;
     if (changeSats < 0n) {
-      const wider = selectVaultCardinalInputs(request.utxos, amount + fee);
+      const wider = selectEligibleVaultCardinalInputs(eligible, amount + fee);
       if (wider.length === selected.length) {
         throw new VaultPlanBuildError('insufficient_funds', 'Vault balance cannot cover amount and fee');
       }
@@ -385,10 +408,11 @@ export function buildVaultInscriptionWithdrawal(
     );
   }
   const excluded = new Set([`${protectedUtxo.txid}:${protectedUtxo.vout}`]);
-  let feeInputs = selectVaultCardinalInputs(request.utxos, 1n, excluded);
+  const eligibleFeeInputs = eligibleVaultCardinalInputs(request.utxos, excluded);
+  let feeInputs = selectEligibleVaultCardinalInputs(eligibleFeeInputs, 1n);
   let withChange = true;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < request.utxos.length + 2; attempt += 1) {
     const selected = [protectedUtxo, ...feeInputs];
     const witnessScripts = selected.map((utxo) =>
       deriveVaultOutput(request.policy, utxo.branch, utxo.derivationIndex).witnessScriptHex);
@@ -405,7 +429,7 @@ export function buildVaultInscriptionWithdrawal(
     const fee = feeForVsize(feeRate, sizing.vsize);
     const changeSats = feeInputTotal - fee;
     if (changeSats < 0n) {
-      const wider = selectVaultCardinalInputs(request.utxos, fee, excluded);
+      const wider = selectEligibleVaultCardinalInputs(eligibleFeeInputs, fee);
       if (wider.length === feeInputs.length) {
         throw new VaultPlanBuildError('insufficient_funds', 'clean Vault fee reserve cannot fund inscription movement');
       }
@@ -529,6 +553,9 @@ export function buildVaultCpfp(
   const packageRate = BigInt(request.feeRateSatPerKvB);
   if (packageRate <= 0n) {
     throw new VaultPlanBuildError('insufficient_funds', 'CPFP package fee rate must be positive');
+  }
+  if (packageRate > BigInt(MAX_FEE_RATE_SAT_PER_KVB)) {
+    throw new VaultPlanBuildError('insufficient_funds', 'CPFP package fee rate exceeds the online Vault maximum');
   }
   const targetPackageFee = feeForVsize(packageRate, previousPlan.vsize + sizing.vsize);
   const relayFloor = feeForVsize(1_000n, sizing.vsize);

@@ -1,5 +1,5 @@
 /** Community Vault v1 mainnet transaction plans and BIP371 PSBT handling. */
-import { schnorr } from '@noble/curves/secp256k1';
+import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { HDKey } from '@scure/bip32';
 import {
   OutScript,
@@ -7,6 +7,7 @@ import {
   TaprootControlBlock,
   Transaction,
 } from '@scure/btc-signer';
+import { hash160 } from '@scure/btc-signer/utils';
 import { bip32Versions } from '../keys/extended-key';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '../vault/encoding';
@@ -24,6 +25,7 @@ import {
   type CommunityVaultSpendPlanV1,
 } from './contracts';
 import { assertCommunityVaultPolicy } from './policy';
+import { canonicalTaprootSignatureSighash } from '../transactions/taproot-signature';
 
 const PLAN_DOMAIN = 'drey-community-vault-plan-v1';
 const MAX_PSBT_BYTES = 2_000_000;
@@ -254,6 +256,10 @@ export function assertCommunityVaultSpendPlan(plan: CommunityVaultSpendPlanV1): 
   if (BigInt(parsed.createdAtMs) >= BigInt(parsed.expiresAtMs)) throw new Error('Community Vault plan expiry must follow creation');
   if (parsed.vaultInputIndex >= parsed.inputs.length || parsed.ordinalRoute.outputIndex >= parsed.outputs.length) {
     throw new Error('Community Vault plan index is out of range');
+  }
+  const outpoints = parsed.inputs.map((input) => `${input.txid}:${input.vout}`);
+  if (new Set(outpoints).size !== outpoints.length) {
+    throw new Error('Community Vault plan contains a duplicate input');
   }
   const inputTotal = parsed.inputs.reduce((sum, item) => sum + BigInt(item.valueSats), 0n);
   const outputTotal = parsed.outputs.reduce((sum, item) => sum + BigInt(item.valueSats), 0n);
@@ -524,6 +530,48 @@ function serializedWitnessBytes(witness: readonly Uint8Array[]): number {
   return compactSizeLength(witness.length) + witness.reduce((sum, item) => sum + compactSizeLength(item.length) + item.length, 0);
 }
 
+function verifyFinalizedOrdinaryInputs(tx: Transaction, plan: CommunityVaultSpendPlanV1): void {
+  const scripts = plan.inputs.map((item) => hexToBytes(item.scriptPubKeyHex));
+  const amounts = plan.inputs.map((item) => BigInt(item.valueSats));
+  for (let index = 0; index < plan.inputs.length; index += 1) {
+    if (index === plan.vaultInputIndex) continue;
+    const expected = plan.inputs[index]!;
+    const witness = tx.getInput(index).finalScriptWitness ?? [];
+    if (/^0014[0-9a-f]{40}$/u.test(expected.scriptPubKeyHex)) {
+      const signature = witness[0];
+      const publicKey = witness[1];
+      const keyHash = expected.scriptPubKeyHex.slice(4);
+      if (witness.length !== 2 || !signature || signature.length < 2 || !publicKey ||
+          signature.at(-1) !== SigHash.ALL || bytesToHex(hash160(publicKey)) !== keyHash) {
+        throw new Error(`invalid finalized Community Vault ordinary input ${index}`);
+      }
+      const message = tx.preimageWitnessV0(
+        index,
+        hexToBytes(`76a914${keyHash}88ac`),
+        SigHash.ALL,
+        BigInt(expected.valueSats),
+      );
+      if (!secp256k1.verify(signature.slice(0, -1), message, publicKey, {
+        format: 'der', prehash: false, lowS: true,
+      })) throw new Error(`invalid finalized Community Vault ordinary input ${index}`);
+      continue;
+    }
+    if (/^5120[0-9a-f]{64}$/u.test(expected.scriptPubKeyHex)) {
+      const signature = witness[0];
+      const sighash = signature ? canonicalTaprootSignatureSighash(signature) : null;
+      if (witness.length !== 1 || !signature || sighash !== SigHash.DEFAULT) {
+        throw new Error(`invalid finalized Community Vault ordinary input ${index}`);
+      }
+      const message = tx.preimageWitnessV1(index, scripts, sighash, amounts);
+      if (!schnorr.verify(signature.slice(0, 64), message, scripts[index]!.slice(2))) {
+        throw new Error(`invalid finalized Community Vault ordinary input ${index}`);
+      }
+      continue;
+    }
+    throw new Error(`unsupported finalized Community Vault ordinary input ${index}`);
+  }
+}
+
 export function verifyFinalizedCommunityVaultTransaction(input: {
   policy: CommunityVaultPolicyV1;
   plan: CommunityVaultSpendPlanV1;
@@ -555,6 +603,7 @@ export function verifyFinalizedCommunityVaultTransaction(input: {
   if (signedUnits.length !== COMMUNITY_VAULT_THRESHOLD) {
     throw new Error('finalized Community Vault witness must contain exactly 69 valid unit signatures');
   }
+  verifyFinalizedOrdinaryInputs(tx, input.plan);
   const witnessBytes = serializedWitnessBytes(witness);
   if (hexToBytes(input.policy.tapscriptHex).length > COMMUNITY_VAULT_MAX_TAPSCRIPT_BYTES ||
       witnessBytes > COMMUNITY_VAULT_MAX_FINAL_WITNESS_BYTES || tx.weight > MAX_STANDARD_TRANSACTION_WEIGHT ||
