@@ -43,7 +43,7 @@ export interface MarketplaceTemplate {
 const SATFLOW_ORIGINS = ['https://satflow.com', 'https://www.satflow.com'] as const;
 const ORDNET_ORIGINS = ['https://ord.net', 'https://www.ord.net'] as const;
 const OMB_WIKI_ORIGIN = ['https://ordinalmaxibiz.wiki'] as const;
-const FIXTURE_DIGEST = 'cc85aecdb59b05de459d4e115a6705796e0c9b5f1731853c8cf5b894d2cfd5d7';
+const FIXTURE_DIGEST = '3be00f1a9f50ccad6ba4cf5845b308539e64eca2fc31e3a9604478a7bd333c18';
 const FIVE_MINUTES = 5 * 60_000;
 
 function step(
@@ -136,7 +136,7 @@ export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = Object.free
   template({ marketplaceId: 'ordnet', displayName: 'ord.net', templateId: 'ordnet-list',
     templateVersion: 'drey-1', origins: ORDNET_ORIGINS, action: 'list', role: 'seller',
     assetKind: 'inscription', networks: ['mainnet'], broadcaster: 'site', stepCount: 3,
-    steps: [step(1, [0]), step(2, [0x83], true), step(3, [1])],
+    steps: [step(1, [0]), step(2, [0x83], true), step(3, [1], false, true)],
     sourceVersion: 'trading-api-1.0.0', activation: 'enabled' }),
   template({ marketplaceId: 'ordnet', displayName: 'ord.net', templateId: 'ordnet-buy',
     templateVersion: 'drey-1', origins: ORDNET_ORIGINS, action: 'buy', role: 'buyer',
@@ -147,6 +147,12 @@ export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = Object.free
     origins: OMB_WIKI_ORIGIN, action: 'buy', role: 'buyer', assetKind: 'inscription',
     networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
     steps: [step(1, [0, 1])], sourceVersion: 'omb-wiki-contract-v1', activation: 'enabled' }),
+  template({ marketplaceId: 'ordnet', displayName: 'OMB Wiki · ord.net',
+    templateId: 'omb-wiki-ordnet-list-v1', templateVersion: 'omb-wiki-ordnet-list-v1',
+    origins: OMB_WIKI_ORIGIN, action: 'list', role: 'seller', assetKind: 'inscription',
+    networks: ['mainnet'], broadcaster: 'site', stepCount: 3,
+    steps: [step(1, [0]), step(2, [0x83], true), step(3, [1], false, true)],
+    sourceVersion: 'omb-wiki-contract-v1', activation: 'enabled' }),
   template({ marketplaceId: 'ordnet', displayName: 'ord.net', templateId: 'ordnet-offer',
     templateVersion: 'drey-1', origins: ORDNET_ORIGINS, action: 'offer', role: 'buyer',
     assetKind: 'inscription', networks: ['mainnet'], broadcaster: 'site', stepCount: 1,
@@ -193,6 +199,7 @@ const REVIEWED_ENABLED_TEMPLATES = new Set([
   'ordnet-accept-offer',
   'ordnet-accept-counter',
   'omb-wiki-ordnet-buy',
+  'omb-wiki-ordnet-list-v1',
   'omb-wiki-satflow-secure-buy',
 ]);
 

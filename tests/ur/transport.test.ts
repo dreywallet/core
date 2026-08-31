@@ -215,4 +215,31 @@ describe('BCR-2024-001 fixed-rate MUR', () => {
       }
     }
   });
+
+  it('rejects oversized encoded frames before Bytewords decoding', () => {
+    const decoder = new FixedRateUrDecoder({ maxMessageLength: 8, maxFragmentLength: 8 });
+    const single = new FixedRateUrEncoder('drey-test', new Uint8Array(8));
+    expect(decoder.receive(single.frames[0]!)).toMatchObject({ status: 'complete' });
+    expectCode(() => new FixedRateUrDecoder({ maxMessageLength: 8 })
+      .receive(`ur:drey-test/${'a'.repeat(26)}`), 'limit-exceeded');
+
+    const multipart = new FixedRateUrEncoder('drey-test', new Uint8Array(16), {
+      minFragmentLength: 8,
+      maxFragmentLength: 8,
+    });
+    const multipartDecoder = new FixedRateUrDecoder({
+      maxMessageLength: 16,
+      maxFragmentLength: 8,
+    });
+    for (const frame of multipart.frames) multipartDecoder.receive(frame.toUpperCase());
+    expect(multipartDecoder.result()?.cborMessage).toEqual(new Uint8Array(16));
+    expectCode(() => new FixedRateUrDecoder({ maxFragmentLength: 8 })
+      .receive(`ur:drey-test/1-1/${'a'.repeat(78)}`), 'limit-exceeded');
+
+    const longType = 'a'.repeat(256);
+    const longTypeFrame = new FixedRateUrEncoder(longType, new Uint8Array(1)).frames[0]!;
+    expect(new FixedRateUrDecoder({ expectedType: longType }).receive(longTypeFrame))
+      .toMatchObject({ status: 'complete', type: longType });
+    expectCode(() => new FixedRateUrDecoder({ maxMessageLength: 0 }), 'limit-exceeded');
+  });
 });

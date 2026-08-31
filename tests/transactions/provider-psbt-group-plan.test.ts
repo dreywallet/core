@@ -541,6 +541,166 @@ function contextlessOrdListingGroup(): ReturnType<typeof createProviderPsbtGroup
   });
 }
 
+function ombOrdListingGroup(options: {
+  order?: Array<'escrow' | 'settlement' | 'recovery'>;
+  settlementDisableTweak?: boolean;
+  settlementPayoutAmount?: bigint;
+  workflowSuffix?: Partial<Record<'escrow' | 'settlement' | 'recovery', string>>;
+} = {}): ReturnType<typeof createProviderPsbtGroupPlan> {
+  const seller = ordinalAddresses[0]!.publicKeyHex.slice(2);
+  const leaf = p2tr_ns(2, [hexToBytes(seller), hexToBytes(ORDNET_SALE_PUBLIC_KEY)])[0]!;
+  const sale = p2tr(hexToBytes(seller), { script: leaf.script }, NETWORK, true);
+  const escrow = new Transaction({ lowR: true });
+  escrow.addInput({
+    txid: '44'.repeat(32), index: 0, sequence: 0xfffffffd, sighashType: SigHash.DEFAULT,
+    witnessUtxo: { amount: 10_000n, script: hexToBytes(ordinalScripts[0]!) },
+    tapInternalKey: hexToBytes(seller),
+  });
+  escrow.addOutput({ amount: 10_000n, script: sale.script });
+  const escrowPsbt = bytesToBase64(escrow.toPSBT());
+  const escrowTxid = deriveLinkedProviderPsbtGroup([{
+    nodeId: 'escrow', psbtBase64: escrowPsbt, selectedInputIndexes: [0],
+  }]).nodes[0]!.unsignedTxid;
+
+  const settlement = new Transaction({ lowR: true });
+  settlement.addInput({
+    txid: escrowTxid, index: 0, sequence: 0xfffffffd,
+    sighashType: SigHash.SINGLE_ANYONECANPAY,
+    witnessUtxo: { amount: 10_000n, script: sale.script },
+    tapInternalKey: sale.tapInternalKey,
+    tapMerkleRoot: sale.tapMerkleRoot,
+    tapLeafScript: sale.tapLeafScript!,
+  });
+  settlement.addOutput({
+    amount: options.settlementPayoutAmount ?? 9_000n,
+    script: hexToBytes(scripts[2]!),
+  });
+  const recovery = new Transaction({ lowR: true });
+  recovery.addInput({
+    txid: escrowTxid, index: 0, sequence: 0xfffffffd, sighashType: SigHash.ALL,
+    witnessUtxo: { amount: 10_000n, script: sale.script },
+    tapInternalKey: sale.tapInternalKey,
+    tapMerkleRoot: sale.tapMerkleRoot,
+  });
+  recovery.addOutput({ amount: 9_000n, script: hexToBytes(ordinalScripts[0]!) });
+
+  const identifiers = {
+    inscriptionId: `${'44'.repeat(32)}i0`,
+    inscriptionOutpoint: `${'44'.repeat(32)}:0`,
+    preflightHandle: 'omb-preflight-1',
+  };
+  const economics = {
+    priceSats: '10000',
+    sellerProceedsSats: '9000',
+    marketplaceFeeSats: '1000',
+    payoutAddress: addresses[2]!.address,
+    assetDestination: ordinalAddresses[0]!.address,
+  };
+  const stages = ['escrow', 'settlement', 'recovery'] as const;
+  const txs = [escrow, settlement, recovery];
+  const rawItems = stages.map((stage, index) => {
+    const context = {
+      version: 1,
+      marketplaceId: 'ordnet',
+      templateVersion: 'omb-wiki-ordnet-list-v1',
+      action: 'list' as const,
+      role: 'seller' as const,
+      assetKind: 'inscription' as const,
+      workflowId: `omb-listing-1${options.workflowSuffix?.[stage] ?? ''}`,
+      step: index + 1,
+      stepCount: 3,
+      identifiers,
+      economics,
+      stage,
+      selectedInputIndexes: [0],
+      expiresAt: NOW + 60_000,
+      broadcaster: 'site' as const,
+    };
+    return {
+      nodeId: stage,
+      psbtBase64: bytesToBase64(txs[index]!.toPSBT()),
+      selectedInputIndexes: [0],
+      inputsToSign: [{
+        address: ordinalAddresses[0]!.address,
+        signingIndexes: [0],
+        sigHash: [0, 131, 1][index] as 0 | 131 | 1,
+        ...(stage === 'settlement'
+          ? { disableTweakSigner: options.settlementDisableTweak ?? true }
+          : {}),
+      }],
+      marketplace: {
+        context,
+        resolution: {
+          status: 'recognized' as const,
+          marketplaceId: 'ordnet' as const,
+          displayName: 'OMB Wiki · ord.net',
+          templateId: 'omb-wiki-ordnet-list-v1',
+          templateVersion: 'omb-wiki-ordnet-list-v1',
+          flexible: stage === 'settlement',
+          reason: 'fixture',
+        },
+      },
+    };
+  });
+  const rootClassification: UtxoClassification = {
+    txid: '44'.repeat(32), vout: 0, valueSats: '10000', scriptPubKey: ordinalScripts[0]!,
+    confirmations: 10, primaryClass: 'inscribed',
+    inscriptions: [{ inscriptionId: identifiers.inscriptionId, satpoint: `${identifiers.inscriptionOutpoint}:0` }],
+    satRanges: null, unsupportedAssetDetected: false, confidence: 'authoritative',
+    classifiedTip: source.coreTip, classificationRevision: source.classificationRevision,
+  };
+  const preparation = prepareProviderPsbtGroupInputs({
+    groupId: 'omb-listing-group',
+    items: rawItems,
+    externalClassifications: [rootClassification],
+    source,
+    walletControl: {
+      network: 'mainnet', origin: 'https://ordinalmaxibiz.wiki',
+      accountId: publicAccount.accountId, account: 0,
+      candidates: [{ address: ordinalAddresses[0]!.address, derivation: ordinalDerivation(0) }],
+    },
+  });
+  const plans = rawItems.map((item, index) => {
+    const linked = providerPsbtLinkedGroupBinding(preparation, item.nodeId);
+    return bindPreviewPlaceholders(createProviderPsbtPlan({
+      psbtBase64: item.psbtBase64,
+      binding: { ...binding, origin: 'https://ordinalmaxibiz.wiki' },
+      network: 'mainnet', vaultId: 'vault-1', sessionId: 'session-1',
+      accountId: publicAccount.accountId, account: 0,
+      classifications: linked.classifications,
+      walletInputs: [
+        ...(index === 0 ? [{ outpoint: identifiers.inscriptionOutpoint, derivation: ordinalDerivation(0) }] : []),
+        ...linked.walletInputs,
+      ],
+      walletOutputs: index === 2 ? [{
+        scriptPubKey: ordinalScripts[0]!,
+        output: {
+          valueSats: 9_000n, scriptPubKey: ordinalScripts[0]!,
+          address: ordinalAddresses[0]!.address, role: 'ordinal_change' as const,
+          derivation: ordinalDerivation(0),
+        },
+      }] : [],
+      source, broadcast: false, selectedInputIndexes: [0],
+      signInputBindings: [{ address: ordinalAddresses[0]!.address, inputIndexes: [0] }],
+      planId: `omb-${item.nodeId}-plan`, now: NOW, expiresAt: NOW + 60_000,
+      marketplace: {
+        context: item.marketplace.context,
+        resolution: item.marketplace.resolution,
+        selectedInputIndexes: [0],
+      },
+      linkedGroup: linked.linkedGroup,
+    }));
+  });
+  const byStage = new Map(stages.map((stage, index) => [stage, { raw: rawItems[index]!, plan: plans[index]! }]));
+  return createProviderPsbtGroupPlan({
+    items: (options.order ?? [...stages]).map((stage) => {
+      const item = byStage.get(stage)!;
+      return { nodeId: stage, plan: item.plan, inputsToSign: item.raw.inputsToSign };
+    }),
+    groupId: preparation.groupId, now: NOW, approvalGeneration: 13, preparation,
+  });
+}
+
 describe('provider PSBT group plans', () => {
   it('signs exact zero-fee alternatives sharing one external wallet input and rejects flexible conflicts', () => {
     const first = makePlan({
@@ -693,6 +853,37 @@ describe('provider PSBT group plans', () => {
       signedByNode.get('recovery')?.getInput(index).tapKeySig !== undefined)).toBe(true);
     expect([0, 1].every((index) =>
       signedByNode.get('parent')?.getInput(index).tapKeySig !== undefined)).toBe(true);
+  });
+
+  it('binds OMB Wiki escrow, settlement, and recovery into one ordered approval', async () => {
+    const group = ombOrdListingGroup();
+    expect(group.items.map((item) => item.plan.marketplace?.context.step)).toEqual([1, 2, 3]);
+    expect(group.approvalSummary).toMatchObject({
+      transactionCount: 3,
+      linked: true,
+      marketplaceActions: ['list'],
+      alternativeCount: 1,
+    });
+    expect(group.items.every((item) => item.plan.broadcast === false)).toBe(true);
+    const signed = await signProviderPsbtGroupPlan({
+      plan: group, seed, now: () => NOW + 1,
+      random: (length) => new Uint8Array(length).fill(6),
+      yieldControl: async () => undefined,
+    });
+    expect(signed.results).toHaveLength(3);
+  });
+
+  it('rejects missing, reordered, cross-workflow, weakened payout, and tweaked OMB listing steps', () => {
+    expect(() => ombOrdListingGroup({ order: ['settlement', 'escrow', 'recovery'] }))
+      .toThrow(/missing, duplicated, or reordered/u);
+    expect(() => ombOrdListingGroup({ order: ['escrow', 'settlement'] }))
+      .toThrow(/exactly three/u);
+    expect(() => ombOrdListingGroup({ workflowSuffix: { recovery: '-other' } }))
+      .toThrow(/workflow differs/u);
+    expect(() => ombOrdListingGroup({ settlementPayoutAmount: 8_999n }))
+      .toThrow(/seller proceeds|approved outcome/u);
+    expect(() => ombOrdListingGroup({ settlementDisableTweak: false }))
+      .toThrow(/settlement authorization/u);
   });
 
   it('binds recognized marketplace settlement, linked topology, recovery proof, and compact summary', () => {

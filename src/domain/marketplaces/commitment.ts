@@ -104,7 +104,9 @@ export function analyzeMarketplaceCommitment(input: {
     if (guaranteed?.has(index)) guaranteedProceedsSats += tx.getOutput(index).amount ?? 0n;
   }
   const expectedProceeds = input.context.economics?.sellerProceedsSats;
-  if (expectedProceeds !== undefined && guaranteedProceedsSats < BigInt(expectedProceeds)) {
+  const proceedsApplyToStep = input.context.stage === undefined || input.context.stage === 'settlement';
+  if (expectedProceeds !== undefined && proceedsApplyToStep &&
+      guaranteedProceedsSats < BigInt(expectedProceeds)) {
     throw new Error('seller proceeds are below the approved amount');
   }
   const uncommittedDimensions: MarketplaceCommitmentAnalysis['uncommittedDimensions'] = [];

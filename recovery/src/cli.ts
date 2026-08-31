@@ -13,7 +13,7 @@
  *
  *   plan → (sign, once per role, possibly on different machines) → finalize
  */
-import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { installNodeCryptoProvider, nodeCryptoProvider, sha256Hex } from './crypto-node';
 import { deriveLadder, verifyKitHex, type VerifiedKit } from './kit';
@@ -45,6 +45,7 @@ import {
   serializeRecoveryCSetupResponse,
 } from '../../src/domain/vault/multisig-encoding';
 import { readBoundedRegularFile } from './bounded-file';
+import { replacePrivateFileAtomically, writeNewPrivateFile } from './safe-output';
 
 export const TOOL_VERSION = 'drey-vault-recovery-v1';
 export const RECOVERY_UTXO_FILE_MAX_BYTES = 8 * 1024 * 1024;
@@ -134,13 +135,15 @@ export function parseRecoverySearchDepth(value: string | true | undefined): numb
   return depth;
 }
 
-function saveSession(path: string, session: Session): void {
-  writeFileSync(path, `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 });
+function saveSession(path: string, session: Session, replace: boolean): void {
+  const contents = `${JSON.stringify(session, null, 2)}\n`;
+  if (replace) replacePrivateFileAtomically(path, contents);
+  else writeNewPrivateFile(path, contents);
 }
 
 /** Raw transaction files are also valid HTTP request bodies; keep them exact hex. */
 export function writeTransactionHexFile(path: string, transactionHex: string): void {
-  writeFileSync(path, transactionHex, { mode: 0o600 });
+  writeNewPrivateFile(path, transactionHex);
 }
 
 async function askLine(question: string): Promise<string> {
@@ -290,18 +293,19 @@ function cmdReadKit(args: Args): void {
     out('  (all zero: this kit was produced before a standalone package was published)');
   }
   out('');
-  out('Compatibility requirements:');
+  out('Kit-provided compatibility requirements:');
   for (const line of kit.compatibilityRequirements) out(`  - ${line}`);
   out('');
-  out('Recovery instructions:');
+  out('Kit-provided recovery instructions:');
   out(`  ${kit.recoveryInstructions}`);
   out('');
-  out('Rotation instructions:');
+  out('Kit-provided rotation instructions:');
   out(`  ${kit.rotationInstructions}`);
   out('');
-  out('Every value above was regenerated from the three signer origins in the kit.');
-  out('The policy ID, both descriptors, and the first receive address were recomputed');
-  out('and compared, not read out and displayed.');
+  out('The policy ID, both descriptors, and the first receive address were regenerated');
+  out('from the three signer origins and compared, not merely read out and displayed.');
+  out('The labels, dates, tool digests, compatibility text, and instructions are kit');
+  out('metadata. Independently compare the tool digest with the published release notes.');
 }
 
 async function cmdCreateRecoveryC(args: Args): Promise<void> {
@@ -316,7 +320,7 @@ async function cmdCreateRecoveryC(args: Args): Promise<void> {
     rng: (length) => nodeCryptoProvider.randomBytes(length),
     nowMs: BigInt(Date.now()),
   });
-  writeFileSync(target, serializeRecoveryCSetupResponse(response), { mode: 0o600, flag: 'wx' });
+  writeNewPrivateFile(target, serializeRecoveryCSetupResponse(response));
   out('');
   out(`Wrote the public Recovery C response to ${target}. It contains no recovery words or private key.`);
   out('Remove the media and power off this temporary offline environment before importing the response.');
@@ -340,7 +344,7 @@ async function cmdVerifyRecoveryC(args: Args): Promise<void> {
   const response = await verifyRecoveryCWords({
     challenge, io: recoveryCIo, nowMs: BigInt(Date.now()),
   });
-  writeFileSync(target, serializeRecoveryCBackupCheckResponse(response), { mode: 0o600, flag: 'wx' });
+  writeNewPrivateFile(target, serializeRecoveryCBackupCheckResponse(response));
   out('');
   out('The paper words recreate the exact Recovery C named by this Vault policy.');
   out(`Wrote the public backup-check response to ${target}. It contains no recovery words or private key.`);
@@ -400,7 +404,7 @@ async function cmdPlan(args: Args): Promise<void> {
     unsignedPsbtHex: constructVaultPsbt(identity, built.plan),
     partials: [],
   };
-  saveSession(required(args, 'out'), session);
+  saveSession(required(args, 'out'), session, false);
   out(renderReview(identity, built.plan, session.unsignedPsbtHex));
   out('');
   out(`Wrote ${required(args, 'out')}. Review it, then sign it with two distinct roles.`);
@@ -438,7 +442,7 @@ async function cmdSign(args: Args): Promise<void> {
     ...(optionalBigint(args, 'now') === undefined ? {} : { nowMs: optionalBigint(args, 'now')! }),
   });
   session.partials.push(result);
-  saveSession(sessionPath, session);
+  saveSession(sessionPath, session, true);
 
   out('');
   out(`Signed as ${signerRole}.`);
@@ -469,7 +473,7 @@ function cmdCombine(args: Args): void {
   out(renderReview(identity, session.plan, combined.psbtHex));
   const target = args.flags.get('out');
   if (typeof target === 'string') {
-    writeFileSync(target, `${combined.psbtHex}\n`, { mode: 0o600 });
+    writeNewPrivateFile(target, `${combined.psbtHex}\n`);
     out(`\nWrote the combined PSBT to ${target}.`);
   }
 }

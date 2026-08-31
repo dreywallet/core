@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ordnetMarketplaceProviderCapabilities,
   normalizeProviderConnectionRequest,
   PROVIDER_MAX_SIGN_MESSAGES,
   PROVIDER_MAX_SIGN_MESSAGE_BATCH_BYTES,
@@ -80,12 +81,17 @@ describe('provider operation registry', () => {
     };
     expect(getInfo.safeParse(base).success).toBe(true);
     expect(getInfo.safeParse({ ...base, capabilities: ['community-vault-v1'] }).success).toBe(true);
+    expect(ordnetMarketplaceProviderCapabilities()).toEqual([
+      'marketplace-ordnet-list-v1',
+      'marketplace-ordnet-foundry-presale-v1',
+    ]);
     expect(getInfo.safeParse({
       ...base,
       capabilities: [
         'community-vault-v1',
         'community-vault-offers-v1',
         'community-vault-position-transfer-v1',
+        ...ordnetMarketplaceProviderCapabilities(),
       ],
     }).success).toBe(true);
     expect(getInfo.safeParse({ ...base, capabilities: ['unknown-capability'] }).success).toBe(false);

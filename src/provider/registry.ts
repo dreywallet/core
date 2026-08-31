@@ -10,6 +10,12 @@ import { z } from 'zod';
 import { validateBip322Message } from '../domain/transactions/bip322';
 import { marketplaceContextSchema } from '../domain/marketplaces/types';
 import {
+  assertMarketplaceRegistryIntegrity,
+  MARKETPLACE_TEMPLATES,
+} from '../domain/marketplaces/registry';
+import { ORDNET_FOUNDRY_PRESALE_POLICY_VERSION } from
+  '../domain/marketplaces/ordnet-foundry-path';
+import {
   PROVIDER_MAX_PSBT_BATCH_BASE64_CHARS,
   PROVIDER_MAX_PSBT_BATCH_SELECTED_INPUTS,
   PROVIDER_MAX_PSBT_BATCH_ITEMS,
@@ -40,8 +46,30 @@ export const providerCapabilitySchema = z.enum([
   'community-vault-v1',
   'community-vault-offers-v1',
   'community-vault-position-transfer-v1',
+  'marketplace-ordnet-list-v1',
+  'marketplace-ordnet-foundry-presale-v1',
 ]);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
+
+export function ordnetMarketplaceProviderCapabilities(): ProviderCapability[] {
+  assertMarketplaceRegistryIntegrity();
+  const listing = MARKETPLACE_TEMPLATES.find((entry) =>
+    entry.templateId === 'omb-wiki-ordnet-list-v1');
+  const completeListing = listing?.activation === 'enabled' && listing.templateVersion ===
+    'omb-wiki-ordnet-list-v1' && listing.origins.length === 1 &&
+    listing.origins[0] === 'https://ordinalmaxibiz.wiki' && listing.stepCount === 3 &&
+    listing.steps.length === 3 && listing.steps[0]?.allowedSighashes.length === 1 &&
+    listing.steps[0]?.allowedSighashes[0] === 0 &&
+    listing.steps[1]?.allowedSighashes.length === 1 &&
+    listing.steps[1]?.allowedSighashes[0] === 0x83 && listing.steps[1]?.allowTaprootScriptPath === true &&
+    listing.steps[2]?.allowedSighashes.length === 1 &&
+    listing.steps[2]?.allowedSighashes[0] === 1 && listing.steps[2]?.allowTaprootTreeKeyPath === true;
+  return [
+    ...(completeListing ? ['marketplace-ordnet-list-v1' as const] : []),
+    ...(ORDNET_FOUNDRY_PRESALE_POLICY_VERSION === 1
+      ? ['marketplace-ordnet-foundry-presale-v1' as const] : []),
+  ];
+}
 
 export const providerNetworkSchema = z.enum(['Mainnet', 'Signet']);
 export type ProviderNetwork = z.infer<typeof providerNetworkSchema>;
@@ -338,6 +366,8 @@ const signInputsSchema = z
 
 export const satsConnectInputToSignSchema = z.object({
   address: addressSchema,
+  publicKey: publicKeySchema.optional(),
+  disableTweakSigner: z.boolean().optional(),
   signingIndexes: z.array(z.number().int().nonnegative().max(PROVIDER_MAX_SIGN_INPUTS - 1))
     .min(1).max(PROVIDER_MAX_SIGN_INPUTS),
   sigHash: z.union([z.literal(0), z.literal(1), z.literal(129), z.literal(131)]).optional(),

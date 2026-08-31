@@ -48,6 +48,7 @@ export const marketplaceContextSchema = z.object({
     orderId: identifierSchema.optional(),
     offerId: identifierSchema.optional(),
     inscriptionId: identifierSchema.optional(),
+    inscriptionOutpoint: z.string().regex(/^[0-9a-f]{64}:(?:0|[1-9][0-9]*)$/u).optional(),
     preflightHandle: identifierSchema.optional(),
     purchaseAnchorUtxoId: identifierSchema.optional(),
   }).strict().optional(),
@@ -62,7 +63,7 @@ export const marketplaceContextSchema = z.object({
     payoutAddress: z.string().min(8).max(128).optional(),
     assetDestination: z.string().min(8).max(128).optional(),
   }).strict().optional(),
-  stage: z.enum(['payment-prep', 'purchase']).optional(),
+  stage: z.enum(['payment-prep', 'purchase', 'escrow', 'settlement', 'recovery']).optional(),
   selectedInputIndexes: z.array(z.number().int().nonnegative()).min(1).max(256).optional(),
   revision: z.string().min(1).max(128).optional(),
   // Preflight-promised transaction ids (ord.net Trading API 1.0.0): the page

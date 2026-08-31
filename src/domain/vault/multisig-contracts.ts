@@ -32,11 +32,10 @@ export const VAULT_SIGHASH = 'all' as const;
  * The prose a v1 public recovery kit carries (ADR 0007 §6).
  *
  * This lives in core rather than beside the coordinator that mints kits because
- * three separate programs must agree on it byte for byte: the extension that
- * writes a kit, the standalone recovery package that reads one, and the golden
- * vectors that pin the format. Prose duplicated across repositories drifts on
- * the first copy-edit, and a kit whose compatibility requirements no longer
- * describe the reader that must open it is worse than one with none.
+ * new writers and the golden vectors must agree on it byte for byte. Readers
+ * deliberately continue accepting historical v1 wording: this operational
+ * metadata is not part of policy identity, and copy changes must never make an
+ * older funded Vault unrecoverable.
  *
  * Treat any change here as a format change: it alters the bytes of every kit
  * minted afterwards, so it needs a vector regeneration and a reader that still

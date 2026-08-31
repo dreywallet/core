@@ -18,6 +18,7 @@ const DEFAULT_MAX_FRAGMENT_LENGTH = 250;
 const DEFAULT_MIN_FRAGMENT_LENGTH = 10;
 const DEFAULT_MAX_MESSAGE_LENGTH = 1_048_576;
 const DEFAULT_MAX_PARTS = 4_096;
+const MAX_SEQUENCE_COMPONENT_LENGTH = 10;
 
 export interface FountainPart {
   seqNum: number;
@@ -340,6 +341,10 @@ export class FixedRateUrDecoder {
     this.maxFragmentLength = options.maxFragmentLength ?? DEFAULT_MAX_FRAGMENT_LENGTH;
     this.maxMessageLength = options.maxMessageLength ?? DEFAULT_MAX_MESSAGE_LENGTH;
     this.maxParts = options.maxParts ?? DEFAULT_MAX_PARTS;
+    if ([this.maxFragmentLength, this.maxMessageLength, this.maxParts].some((limit) =>
+      !Number.isSafeInteger(limit) || limit <= 0)) {
+      throw new UrTransportError('limit-exceeded', 'UR decoder limits must be positive safe integers');
+    }
   }
 
   private missing(): number[] {
@@ -352,6 +357,23 @@ export class FixedRateUrDecoder {
   }
 
   receive(value: string): UrReceiveResult {
+    const firstSlash = value.indexOf('/', 3);
+    const secondSlash = firstSlash === -1 ? -1 : value.indexOf('/', firstSlash + 1);
+    const thirdSlash = secondSlash === -1 ? -1 : value.indexOf('/', secondSlash + 1);
+    if (firstSlash === -1 || thirdSlash !== -1) {
+      throw new UrTransportError('invalid-ur', 'UR has an invalid path component count');
+    }
+    const multipart = secondSlash !== -1;
+    if (multipart && secondSlash - firstSlash - 1 > MAX_SEQUENCE_COMPONENT_LENGTH * 2 + 1) {
+      throw new UrTransportError('invalid-ur', 'multipart UR sequence is invalid');
+    }
+    const payloadLength = value.length - (multipart ? secondSlash : firstSlash) - 1;
+    const maximumPayloadLength = multipart
+      ? 2 * (this.maxFragmentLength + 30)
+      : 2 * (this.maxMessageLength + 4);
+    if (payloadLength > maximumPayloadLength) {
+      throw new UrTransportError('limit-exceeded', 'encoded UR payload exceeds configured limits');
+    }
     const frame = parseFrame(value);
     if (this.expectedType !== undefined && frame.type !== this.expectedType) {
       throw new UrTransportError('invalid-type', `expected ur:${this.expectedType}`);

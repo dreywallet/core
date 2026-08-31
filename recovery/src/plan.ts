@@ -28,7 +28,7 @@ import type {
   VaultPolicyIdentityV1,
   VaultUnsignedPlanV1,
 } from '../../src/domain/vault/multisig-contracts';
-import { derive, locateScript } from './kit';
+import { derive, locateScript, locateScripts } from './kit';
 import { sha256Hex } from './crypto-node';
 
 /**
@@ -123,7 +123,7 @@ export function resolveInputs(
   assertRecoverySearchDepth(searchDepth);
   if (utxos.length === 0) throw new Error('the supplied UTXO set is empty');
   const seen = new Set<string>();
-  return utxos.map((utxo) => {
+  const normalized = utxos.map((utxo) => {
     if (!/^[0-9a-f]{64}$/iu.test(utxo.txid)) throw new Error(`utxo txid is not 32-byte hex: ${utxo.txid}`);
     if (!Number.isInteger(utxo.vout) || utxo.vout < 0) throw new Error(`utxo ${utxo.txid} has an invalid vout`);
     const outpoint = `${utxo.txid.toLowerCase()}:${utxo.vout}`;
@@ -140,7 +140,15 @@ export function resolveInputs(
       scriptPubKeyHex = resolved.value.scriptPubKey;
     }
 
-    const located = locateScript(identity, scriptPubKeyHex, searchDepth);
+    return { utxo, outpoint, scriptPubKeyHex };
+  });
+  const locations = locateScripts(
+    identity,
+    normalized.map((item) => item.scriptPubKeyHex),
+    searchDepth,
+  );
+  return normalized.map(({ utxo, outpoint, scriptPubKeyHex }) => {
+    const located = locations.get(scriptPubKeyHex);
     if (!located) {
       throw new Error(
         `utxo ${outpoint} is not owned by this Vault policy: its script does not appear on the receive or ` +

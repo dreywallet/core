@@ -16,7 +16,31 @@
       "expectedListingTransferTxids": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
       "signInputs": { "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3": [1] }
     },
-    "psbtBase64": "cHNidP8BALkCAAAAAhERERERERERERERERERERERERERERERERERERERERERAAAAAAD/////IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIBAAAAAP////8DECcAAAAAAAAWABQCAgICAgICAgICAgICAgICAgICAqCGAQAAAAAAFgAUAwMDAwMDAwMDAwMDAwMDAwMDAwMoIwAAAAAAABYAFAEBAQEBAQEBAQEBAQEBAQEBAQEBAAAAAAABAR8QJwAAAAAAABYAFAQEBAQEBAQEBAQEBAQEBAQEBAQEAAEBH7CtAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAA"
+    "psbtBase64": "cHNidP8BALkCAAAAAhERERERERERERERERERERERERERERERERERERERERERAAAAAAD/////IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIBAAAAAP////8DECcAAAAAAAAWABQCAgICAgICAgICAgICAgICAgICAqCGAQAAAAAAFgAUAwMDAwMDAwMDAwMDAwMDAwMDAwMoIwAAAAAAABYAFAEBAQEBAQEBAQEBAQEBAQEBAQEBAAAAAAABAR8QJwAAAAAAABYAFAQEBAQEBAQEBAQEBAQEBAQEBAQEAAEBH7CtAQAAAAAAFgAUAQEBAQEBAQEBAQEBAQEBAQEBAQEAAAAA",
+    "listing": {
+      "templateVersion": "omb-wiki-ordnet-list-v1",
+      "providerMethod": "signMultipleTransactions",
+      "approvalCount": 1,
+      "transactionCount": 3,
+      "broadcast": false,
+      "steps": [
+        { "step": 1, "stage": "escrow", "sighash": 0 },
+        { "step": 2, "stage": "settlement", "sighash": 131, "disableTweakSigner": true },
+        { "step": 3, "stage": "recovery", "sighash": 1 }
+      ],
+      "workflowBinding": [
+        "workflowId",
+        "inscriptionId",
+        "inscriptionOutpoint",
+        "preflightHandle",
+        "priceSats",
+        "sellerProceedsSats",
+        "marketplaceFeeSats",
+        "payoutAddress",
+        "assetDestination",
+        "expiresAt"
+      ]
+    }
   },
   "satflow": {
     "marketplaceId": "satflow",

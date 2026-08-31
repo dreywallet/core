@@ -1,4 +1,4 @@
-import type { MarketplaceContext } from './types';
+import type { MarketplaceContext, MarketplaceResolution } from './types';
 
 export interface MarketplaceContractCheck {
   ok: boolean;
@@ -7,6 +7,36 @@ export interface MarketplaceContractCheck {
 
 const ok = (): MarketplaceContractCheck => ({ ok: true, reason: 'context contract matched' });
 const fail = (reason: string): MarketplaceContractCheck => ({ ok: false, reason });
+const VERIFIED_WORKFLOW_PRESENTATION_TEMPLATES = new Set([
+  'ordnet-auth',
+  'ordnet-list',
+  'ordnet-counter',
+  'ordnet-accept-offer',
+  'omb-wiki-ordnet-buy',
+  'omb-wiki-satflow-secure-buy',
+]);
+
+export type MarketplaceApprovalPresentation = 'verified_workflow' | 'transaction_only';
+
+/**
+ * Whether the compiled contract proves enough business meaning to brand an
+ * approval, rather than only enough transaction shape to sign it safely.
+ *
+ * Only exact compiled templates with complete reviewed business bindings may
+ * brand an approval. Other recognized shapes remain compatible, but their UI
+ * must rely on independently computed transaction facts instead of page claims.
+ */
+export function marketplaceApprovalPresentation(
+  context: MarketplaceContext,
+  resolution: MarketplaceResolution,
+): MarketplaceApprovalPresentation {
+  if (resolution.status !== 'recognized' || resolution.templateVersion !== context.templateVersion) {
+    return 'transaction_only';
+  }
+  return VERIFIED_WORKFLOW_PRESENTATION_TEMPLATES.has(resolution.templateId ?? '')
+    ? 'verified_workflow'
+    : 'transaction_only';
+}
 
 /** Strict wallet-facing subset; fields not established by fixtures stay unsupported. */
 export function validateMarketplaceContextContract(context: MarketplaceContext): MarketplaceContractCheck {

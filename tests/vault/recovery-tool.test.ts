@@ -12,7 +12,15 @@
  * loop that signed with everything would silently never test either drill.
  */
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HDKey } from '@scure/bip32';
@@ -42,7 +50,7 @@ import {
   deriveVaultOutput,
   generateVaultPolicyIdentity,
 } from '../../src/domain/vault/multisig-descriptors';
-import { verifyKitHex, deriveLadder, locateScript } from '../../recovery/src/kit';
+import { verifyKitHex, deriveLadder, locateScript, locateScripts } from '../../recovery/src/kit';
 import {
   MIN_CHANGE_SATS,
   STANDALONE_SOURCE_SENTINEL,
@@ -59,6 +67,10 @@ import {
   writeTransactionHexFile,
 } from '../../recovery/src/cli';
 import { readBoundedRegularFile } from '../../recovery/src/bounded-file';
+import {
+  replacePrivateFileAtomically,
+  writeNewPrivateFile,
+} from '../../recovery/src/safe-output';
 
 beforeAll(() => installTestCryptoProvider());
 
@@ -180,6 +192,41 @@ describe('the standalone recovery package', () => {
     try {
       writeTransactionHexFile(target, '02000000');
       expect(readFileSync(target)).toEqual(Buffer.from('02000000', 'ascii'));
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+      expect(() => writeTransactionHexFile(target, '03000000'))
+        .toThrow('refusing to overwrite existing file');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces a session atomically without changing its private mode', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'drey-recovery-session-'));
+    const target = join(directory, 'session.json');
+    try {
+      writeNewPrivateFile(target, 'old');
+      replacePrivateFileAtomically(target, 'new');
+      expect(readFileSync(target, 'utf8')).toBe('new');
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('never follows a final-component output symlink', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'drey-recovery-symlink-'));
+    const victim = join(directory, 'victim');
+    const output = join(directory, 'output');
+    try {
+      writeFileSync(victim, 'keep');
+      symlinkSync(victim, output);
+      expect(() => writeNewPrivateFile(output, 'new')).toThrow('refusing to overwrite existing file');
+      expect(readFileSync(victim, 'utf8')).toBe('keep');
+
+      replacePrivateFileAtomically(output, 'session');
+      expect(lstatSync(output).isSymbolicLink()).toBe(false);
+      expect(readFileSync(output, 'utf8')).toBe('session');
+      expect(readFileSync(victim, 'utf8')).toBe('keep');
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -222,6 +269,18 @@ describe('the standalone recovery package', () => {
       expect(locateScript(h.identity, ladder[7]!.scriptPubKeyHex, 20)).toEqual({
         branch: 'receive', index: 7, witnessScriptHex: ladder[7]!.witnessScriptHex,
       });
+      const change = deriveLadder(h.identity, 'change', 0, 9);
+      expect([...locateScripts(h.identity, [
+        ladder[7]!.scriptPubKeyHex,
+        change[9]!.scriptPubKeyHex,
+      ], 20).entries()]).toEqual([
+        [ladder[7]!.scriptPubKeyHex, {
+          branch: 'receive', index: 7, witnessScriptHex: ladder[7]!.witnessScriptHex,
+        }],
+        [change[9]!.scriptPubKeyHex, {
+          branch: 'change', index: 9, witnessScriptHex: change[9]!.witnessScriptHex,
+        }],
+      ]);
     });
   });
 

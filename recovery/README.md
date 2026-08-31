@@ -129,7 +129,15 @@ is itself covered. Each release is therefore reproducible from its own tag using
 its own rule, and changing the rule cannot retroactively invalidate an older
 published digest.
 
-Check the artifact you have against the artifact your kit names:
+The digests in a v1 kit are kit-provided operational metadata; the policy ID
+does not authenticate them. Obtain the immutable release record independently
+(for example from the published release notes), confirm that it maps both
+digests to the same core tag, and compare against that record before relying on
+either value. A copied or altered kit must not become the only source of the
+checksum used to approve the program reading it.
+
+Check the artifact you have against the independently corroborated artifact
+digest for the release your kit names:
 
 ```bash
 shasum -a 256 drey-vault-recovery-v1.mjs
@@ -275,10 +283,13 @@ none of role C's words. Sharing it reveals every address the Vault will ever
 use. Keep a durable copy: losing every copy can prevent recovery even if two
 valid role backups survive. Store it separately from the Recovery Key.
 
-This tool does not believe a word of it. It throws away the stated policy ID and
-both descriptors, regenerates all three from the signer origins alone, and
-rejects the kit if they disagree — so a tampered kit cannot make you look at, or
-fund, an address the policy does not own.
+This tool treats the policy-bearing fields as untrusted. It throws away the
+stated policy ID and both descriptors, regenerates all three from the signer
+origins alone, and rejects the kit if they disagree — so a tampered kit cannot
+make you look at, or fund, an address the policy does not own. Labels, dates,
+compatibility text, instructions, and tool digests are displayed as kit-provided
+metadata; they are not authenticated by that regenerated policy identity and
+must be corroborated independently where they affect an operational decision.
 
 ### The policy
 

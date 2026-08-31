@@ -5,6 +5,7 @@ import { scriptPubKeyHex } from '../keys/script-hash';
 import { templateForResolution } from '../marketplaces/resolver';
 import type { MarketplaceContext, MarketplaceResolution } from '../marketplaces/types';
 import { verifyOrdnetSaleKeyPath, verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
+import { verifyOrdnetFoundryTimelockPath } from '../marketplaces/ordnet-foundry-path';
 import { parseCanonicalSatpoint } from '../ordinals/satpoint';
 import type { PlanDerivation } from './plan';
 import { base64ToBytes, bytesToHex, hexToBytes } from '../vault/encoding';
@@ -17,13 +18,25 @@ import {
 } from './provider-psbt-group';
 
 export type ProviderPsbtInputClassificationProvenanceV1 =
-  | { kind: 'gateway'; outpoint: string }
+  | {
+      kind: 'gateway';
+      outpoint: string;
+      verificationHash?: string;
+      walletControl?: 'ordnet_foundry_script_path';
+    }
+  | {
+      kind: 'ordnet_foundry_future';
+      outpoint: string;
+      verificationHash: string;
+      walletControl: 'ordnet_foundry_script_path';
+    }
   | {
       kind: 'linked_output';
       parentNodeId: string;
       parentOutputIndex: number;
       projectionHash: string;
-      walletControl?: 'standard' | 'ordnet_sale_script_path' | 'ordnet_sale_key_path';
+      walletControl?: 'standard' | 'ordnet_sale_script_path' | 'ordnet_sale_key_path' |
+        'ordnet_foundry_script_path';
     };
 
 export interface InspectedProviderPsbtGroupV1 {
@@ -42,12 +55,18 @@ export interface PreparedProviderPsbtGroupItemInputsV1 {
 }
 
 export interface ProviderPsbtGroupPreparationItem extends LinkedProviderPsbtGroupItem {
-  inputsToSign?: Array<{ address: string; signingIndexes: readonly number[] }>;
+  inputsToSign?: Array<{
+    address: string;
+    publicKey?: string;
+    disableTweakSigner?: boolean;
+    signingIndexes: readonly number[];
+  }>;
   marketplace?: { context: MarketplaceContext; resolution: MarketplaceResolution };
 }
 
 export interface PreparedProviderPsbtGroupInputsV1 extends InspectedProviderPsbtGroupV1 {
   groupId: string;
+  prospectiveOutpoints: string[];
   items: PreparedProviderPsbtGroupItemInputsV1[];
   preparationHash: string;
 }
@@ -167,8 +186,18 @@ function proveInternalWalletControl(input: {
   }
   const parsed = input.transaction.getInput(input.inputIndex);
   if (parsed.tapLeafScript?.length && (contextlessOrdnet || rule?.allowTaprootScriptPath)) {
-    verifyOrdnetSaleScriptPath(input.transaction, input.inputIndex, candidate.derivation.publicKeyHex.slice(2));
-    return { derivation: candidate.derivation, control: 'ordnet_sale_script_path' };
+    try {
+      verifyOrdnetSaleScriptPath(input.transaction, input.inputIndex, candidate.derivation.publicKeyHex.slice(2));
+      return { derivation: candidate.derivation, control: 'ordnet_sale_script_path' };
+    } catch (error) {
+      if (!contextlessOrdnet) throw error;
+      verifyOrdnetFoundryTimelockPath(
+        input.transaction,
+        input.item.selectedInputIndexes,
+        candidate.derivation.publicKeyHex.slice(2),
+      );
+      return { derivation: candidate.derivation, control: 'ordnet_foundry_script_path' };
+    }
   }
   if (!parsed.tapLeafScript?.length && (contextlessOrdnet || rule?.allowTaprootTreeKeyPath)) {
     verifyOrdnetSaleKeyPath(input.transaction, input.inputIndex, candidate.derivation.publicKeyHex.slice(2));
@@ -316,6 +345,7 @@ export function prepareProviderPsbtGroupInputs(input: {
   groupId: string;
   items: readonly ProviderPsbtGroupPreparationItem[];
   externalClassifications: readonly UtxoClassification[];
+  prospectiveOutpoints?: readonly string[];
   source: ClassificationSource;
   walletControl?: {
     network: Network;
@@ -330,8 +360,12 @@ export function prepareProviderPsbtGroupInputs(input: {
   const expectedRoots = inspected.externalOutpoints.map(({ txid, vout }) => outpoint(txid, vout));
   const roots = new Map(input.externalClassifications.map((classification) =>
     [outpoint(classification.txid, classification.vout), classification]));
-  if (roots.size !== input.externalClassifications.length || roots.size !== expectedRoots.length ||
-      expectedRoots.some((key) => !roots.has(key))) {
+  const prospective = new Set(input.prospectiveOutpoints ?? []);
+  if (roots.size !== input.externalClassifications.length ||
+      prospective.size !== (input.prospectiveOutpoints?.length ?? 0) ||
+      [...prospective].some((key) => roots.has(key) || !expectedRoots.includes(key)) ||
+      roots.size + prospective.size !== expectedRoots.length ||
+      expectedRoots.some((key) => !roots.has(key) && !prospective.has(key))) {
     throw new Error('linked PSBT gateway classification partition must contain exactly the external roots');
   }
 
@@ -397,10 +431,97 @@ export function prepareProviderPsbtGroupInputs(input: {
         continue;
       }
       const classification = roots.get(key);
+      if (!classification && prospective.has(key)) {
+        if (!input.walletControl || requestItem.marketplace ||
+            (input.walletControl.origin !== 'https://ord.net' &&
+              input.walletControl.origin !== 'https://www.ord.net') ||
+            !node.selectedInputIndexes.includes(inputIndex)) {
+          throw new Error('prospective input is not covered by native ord.net Foundry policy');
+        }
+        const declarations = requestItem.inputsToSign?.filter((selection) =>
+          selection.signingIndexes.includes(inputIndex)) ?? [];
+        const declaration = declarations[0];
+        const candidate = declarations.length === 1 && declaration
+          ? input.walletControl.candidates.find((entry) => entry.address === declaration.address)
+          : undefined;
+        if (!candidate || !declaration || candidate.derivation.lane !== 'ordinals' ||
+            candidate.derivation.accountId !== input.walletControl.accountId ||
+            candidate.derivation.account !== input.walletControl.account ||
+            declaration.disableTweakSigner === false ||
+            (declaration.publicKey !== undefined &&
+              declaration.publicKey !== candidate.derivation.publicKeyHex &&
+              declaration.publicKey !== candidate.derivation.publicKeyHex.slice(2))) {
+          throw new Error('prospective Foundry input does not bind the active Ordinals signer');
+        }
+        const verified = verifyOrdnetFoundryTimelockPath(
+          transaction,
+          node.selectedInputIndexes,
+          candidate.derivation.publicKeyHex.slice(2),
+        );
+        const futureClassification: UtxoClassification = {
+          txid: transactionInput.txid,
+          vout: transactionInput.vout,
+          valueSats: transactionInput.valueSats.toString(),
+          scriptPubKey: transactionInput.scriptPubKey,
+          confirmations: 0,
+          primaryClass: 'cardinal_clean',
+          inscriptions: [],
+          satRanges: null,
+          unsupportedAssetDetected: false,
+          confidence: 'degraded',
+          classifiedTip: { ...input.source.coreTip },
+          classificationRevision: input.source.classificationRevision,
+        };
+        classifications.push(futureClassification);
+        provenance.push({
+          kind: 'ordnet_foundry_future',
+          outpoint: key,
+          walletControl: 'ordnet_foundry_script_path',
+          verificationHash: hash({ nodeId, key, verified }),
+        });
+        walletInputs.push({ outpoint: key, derivation: candidate.derivation });
+        continue;
+      }
       if (!classification) throw new Error('linked PSBT external root classification is missing');
       assertGatewayClassification(classification, transactionInput, input.source);
       classifications.push(classification);
-      provenance.push({ kind: 'gateway', outpoint: key });
+      const gatewayProvenance: Extract<ProviderPsbtInputClassificationProvenanceV1, {
+        kind: 'gateway';
+      }> = { kind: 'gateway', outpoint: key };
+      const knownFoundryCandidate = transaction.version === 2 && transaction.lockTime >= 500_000_000 &&
+        transaction.inputsLength === 2 && transaction.outputsLength === 1 &&
+        node.selectedInputIndexes.length === 2 && node.selectedInputIndexes[0] === 0 &&
+        node.selectedInputIndexes[1] === 1 && transaction.getInput(0).tapLeafScript?.length === 1 &&
+        transaction.getInput(1).tapLeafScript?.length === 1;
+      if (knownFoundryCandidate && node.selectedInputIndexes.includes(inputIndex) &&
+          input.walletControl && !requestItem.marketplace &&
+          (input.walletControl.origin === 'https://ord.net' ||
+            input.walletControl.origin === 'https://www.ord.net')) {
+        const declarations = requestItem.inputsToSign?.filter((selection) =>
+          selection.signingIndexes.includes(inputIndex)) ?? [];
+        const declaration = declarations[0];
+        const candidate = declarations.length === 1 && declaration
+          ? input.walletControl.candidates.find((entry) => entry.address === declaration.address)
+          : undefined;
+        if (!candidate || !declaration || candidate.derivation.lane !== 'ordinals' ||
+            candidate.derivation.accountId !== input.walletControl.accountId ||
+            candidate.derivation.account !== input.walletControl.account ||
+            declaration.disableTweakSigner === false ||
+            (declaration.publicKey !== undefined &&
+              declaration.publicKey !== candidate.derivation.publicKeyHex &&
+              declaration.publicKey !== candidate.derivation.publicKeyHex.slice(2))) {
+          throw new Error('known Foundry input does not bind the active Ordinals signer');
+        }
+        const verified = verifyOrdnetFoundryTimelockPath(
+          transaction,
+          node.selectedInputIndexes,
+          candidate.derivation.publicKeyHex.slice(2),
+        );
+        gatewayProvenance.walletControl = 'ordnet_foundry_script_path';
+        gatewayProvenance.verificationHash = hash({ nodeId, key, verified });
+        walletInputs.push({ outpoint: key, derivation: candidate.derivation });
+      }
+      provenance.push(gatewayProvenance);
     }
     prepared.set(nodeId, { nodeId, classifications, provenance, walletInputs });
     const projected = projectNodeOutputs({ node, classifications, source: input.source });
@@ -416,6 +537,7 @@ export function prepareProviderPsbtGroupInputs(input: {
   const withoutHash = {
     ...inspected,
     groupId: input.groupId,
+    prospectiveOutpoints: [...prospective].sort(),
     items,
   };
   return Object.freeze({ ...withoutHash, preparationHash: hash(withoutHash) });

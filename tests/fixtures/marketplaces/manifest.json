@@ -18,20 +18,20 @@
       "marketplace": "omb-wiki",
       "path": "omb-wiki-contracts.v1.json",
       "sourceUrl": "https://ordinalmaxibiz.wiki",
-      "accessedAt": "2026-08-16",
+      "accessedAt": "2026-08-30",
       "upstreamVersion": "omb-wiki-contract-v1",
-      "sha256": "ddec6311f84dcff14747a0c7a02a9ef590b4c43840674881f919a2435c61c488",
-      "transformation": "Synthetic, sanitized mainnet-format examples reproducing the reviewed OMB Wiki single-inscription ORD.NET purchase and Satflow direct or one-preparation-plus-one-purchase contracts. Values, addresses, txids, listing IDs, and inscriptions are disposable fixtures; no credentials, signatures, private API data, signing, or broadcast were used."
+      "sha256": "ef5dd37a47f941e7edb0c348f8ecbca321b2bc5c58b2d786d27f30e78e2ef1c8",
+      "transformation": "Synthetic, sanitized mainnet-format examples reproducing the reviewed OMB Wiki single-inscription ORD.NET purchase, linked escrow/settlement/recovery listing, and Satflow direct or one-preparation-plus-one-purchase contracts. Values, addresses, txids, listing IDs, and inscriptions are disposable fixtures; no credentials, signatures, private API data, signing, or broadcast were used."
     },
     {
       "id": "ordnet-contracts-v2",
       "marketplace": "ordnet",
       "path": "ordnet-contracts.v2.json",
       "sourceUrl": "https://developers.ord.net/openapi.json",
-      "accessedAt": "2026-08-10",
+      "accessedAt": "2026-08-30",
       "upstreamVersion": "trading-api-1.0.0",
-      "sha256": "cfa92aa936505af2616337d2245826cd92d04d516985af66ca4685af38a45438",
-      "transformation": "Manually reviewed canonical subset re-derived from the published ORD.NET Trading API 1.0.0 OpenAPI 3.1 document (byte-identical to the 2026-07-22 capture, digest d70e88af...) plus the developers.ord.net listing/buying/offers reference pages: per-step sighash tables, preflight handle and expected-txid echo binding, 409 stale-state semantics, BIP-322 auth with the 0.01 BTC payment funding gate, and the pinned sale co-signer key. Collection/trait funding-parent (ordnet-offer/v2) shapes are recorded but remain fixture-only pending design review. No credentials, signatures, private API data, or live transaction responses were used."
+      "sha256": "1c8fa04f2b50ad5471fdc2b62406dbc74888ecdd8224d15242be8b9065797f48",
+      "transformation": "Manually reviewed canonical subset re-derived from the published ORD.NET Trading API 1.0.0 OpenAPI 3.1 document (byte-identical to the 2026-07-22 capture, digest d70e88af...), the developers.ord.net trading references, the public Foundry guide, and three independently visible Foundry withdrawal transactions. It records trading sighashes and submit bindings plus the exact canonical Foundry CLTV path, recipient return, and observed fee reserves. Collection/trait funding-parent (ordnet-offer/v2) shapes remain fixture-only. No credentials, private API data, signing, or broadcast were used."
     }
   ]
 }

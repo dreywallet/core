@@ -6,6 +6,8 @@ import { bytesToBase64, hexToBytes } from '../../src/domain/vault/encoding';
 import {
   assertMarketplaceRegistryIntegrity,
   MARKETPLACE_TEMPLATES,
+  marketplaceForOrigin,
+  marketplacesForOrigin,
 } from '../../src/domain/marketplaces/registry';
 import { inspectMarketplacePsbt, resolveMarketplaceRequest } from '../../src/domain/marketplaces/resolver';
 import { analyzeMarketplaceCommitment } from '../../src/domain/marketplaces/commitment';
@@ -15,7 +17,11 @@ import {
   verifyOrdnetSaleScriptPath,
 } from '../../src/domain/marketplaces/ordnet-script-path';
 import type { MarketplaceContext } from '../../src/domain/marketplaces/types';
-import { assertOrdnetSubmitBinding, assertSequentialMarketplaceStep } from '../../src/domain/marketplaces/contracts';
+import {
+  assertOrdnetSubmitBinding,
+  assertSequentialMarketplaceStep,
+  marketplaceApprovalPresentation,
+} from '../../src/domain/marketplaces/contracts';
 import { PROVIDER_MAX_PSBT_OUTPUTS } from '../../src/domain/transactions/provider-psbt-limits';
 
 const context: MarketplaceContext = {
@@ -61,6 +67,63 @@ it('rejects a marketplace PSBT with too many outputs before marketplace analysis
 });
 
 describe('compile-time marketplace registry', () => {
+  it('uses transaction-only presentation for ord.net buyer contracts without full business binding', () => {
+    const incompleteBuyer = {
+      ...context,
+      marketplaceId: 'ordnet',
+      templateVersion: 'drey-1',
+      role: 'buyer',
+      action: 'buy',
+    } as const;
+    const resolution = {
+      status: 'recognized' as const,
+      marketplaceId: 'ordnet' as const,
+      displayName: 'ord.net',
+      templateId: 'ordnet-buy',
+      templateVersion: 'drey-1',
+      flexible: false,
+      reason: 'test',
+    };
+    expect(marketplaceApprovalPresentation(incompleteBuyer, resolution)).toBe('transaction_only');
+    expect(marketplaceApprovalPresentation(
+      { ...incompleteBuyer, action: 'offer' },
+      { ...resolution, templateId: 'ordnet-offer' },
+    ))
+      .toBe('transaction_only');
+    expect(marketplaceApprovalPresentation(
+      { ...incompleteBuyer, action: 'accept_counter' },
+      { ...resolution, templateId: 'ordnet-accept-counter' },
+    ))
+      .toBe('transaction_only');
+
+    expect(marketplaceApprovalPresentation(
+      { ...incompleteBuyer, action: 'list', role: 'seller' },
+      { ...resolution, templateId: 'ordnet-list' },
+    ))
+      .toBe('verified_workflow');
+    expect(marketplaceApprovalPresentation({
+      ...incompleteBuyer,
+      templateVersion: 'omb-wiki-ordnet-buy-v1',
+    }, {
+      ...resolution,
+      templateId: 'omb-wiki-ordnet-buy',
+      templateVersion: 'omb-wiki-ordnet-buy-v1',
+    })).toBe('verified_workflow');
+    expect(marketplaceApprovalPresentation({
+      ...incompleteBuyer,
+      marketplaceId: 'satflow',
+      action: 'secure_buy',
+    }, {
+      ...resolution,
+      marketplaceId: 'satflow',
+      templateId: 'satflow-secure-buy-ordinal',
+    })).toBe('transaction_only');
+    expect(marketplaceApprovalPresentation(incompleteBuyer, {
+      ...resolution,
+      status: 'known_template_mismatch',
+    })).toBe('transaction_only');
+  });
+
   it('has exact HTTPS origins, no collisions, and only reviewed sighashes', () => {
     expect(() => assertMarketplaceRegistryIntegrity()).not.toThrow();
     expect(MARKETPLACE_TEMPLATES.length).toBeGreaterThan(8);
@@ -78,8 +141,16 @@ describe('compile-time marketplace registry', () => {
       steps: [
         { allowedSighashes: [0], allowTaprootScriptPath: false },
         { allowedSighashes: [0x83], allowTaprootScriptPath: true },
-        { allowedSighashes: [1], allowTaprootScriptPath: false },
+        { allowedSighashes: [1], allowTaprootScriptPath: false, allowTaprootTreeKeyPath: true },
       ],
+    });
+    expect(MARKETPLACE_TEMPLATES.find((entry) =>
+      entry.templateId === 'omb-wiki-ordnet-list-v1')).toMatchObject({
+      activation: 'enabled',
+      origins: ['https://ordinalmaxibiz.wiki'],
+      action: 'list',
+      role: 'seller',
+      stepCount: 3,
     });
     const forged = [...MARKETPLACE_TEMPLATES, {
       ...MARKETPLACE_TEMPLATES.find((entry) => entry.templateId === 'ordnet-list')!,
@@ -135,6 +206,13 @@ describe('compile-time marketplace registry', () => {
   });
 
   it('resolves the exact OMB Wiki origin by marketplace ID and rejects altered contracts', () => {
+    expect(marketplacesForOrigin('https://ordinalmaxibiz.wiki')).toEqual(['satflow', 'ordnet']);
+    for (const origin of [
+      'https://www.ordinalmaxibiz.wiki',
+      'https://ordinalmaxibiz.wiki.evil.example',
+      'https://evil.example/ordinalmaxibiz.wiki',
+      'http://ordinalmaxibiz.wiki',
+    ]) expect(marketplaceForOrigin(origin)).toBeNull();
     const candidate = inspectMarketplacePsbt(flexiblePsbt(SigHash.ALL));
     const common: MarketplaceContext = {
       version: 1,

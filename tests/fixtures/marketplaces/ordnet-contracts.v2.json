@@ -103,6 +103,49 @@
       "submitEcho": ["selectedPaymentUtxos", "expectedFundingTxid", "expectedSettlementTxid", "signedSteps"]
     },
     {
+      "action": "foundry_presale_withdrawal",
+      "status": "enabled-native-origin-policy",
+      "origins": ["https://ord.net", "https://www.ord.net"],
+      "transaction": {
+        "version": 2,
+        "locktime": "unix-time-matches-cltv-leaf",
+        "sequence": 4294967293,
+        "sighash": 0,
+        "inputs": ["offset-zero-inscription", "clean-fee-reserve"],
+        "outputs": ["active-recipient-ordinals-address"],
+        "inscriptionValuePreserved": true,
+        "maximumFeeReserveSats": 100000
+      },
+      "taproot": {
+        "internalKey": "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
+        "leafVersion": 192,
+        "merklePathLength": 0,
+        "script": "<unix-time> OP_CHECKLOCKTIMEVERIFY OP_DROP <recipient-x-only-key> OP_CHECKSIG",
+        "disableTweakSigner": true
+      },
+      "futureInputBoundary": "Split-recipient inputs may be unknown only until the parent transaction exists; the complete canonical withdrawal is rechecked before signing. Known inputs require authoritative asset classification.",
+      "observedTransactions": [
+        {
+          "txid": "b94e3956fec61b7a7ea65d5275f8ee1ade29c2c530499d08865df6d546bbe9e3",
+          "locktime": 1788098400,
+          "inscriptionValueSats": 333,
+          "feeReserveSats": 330
+        },
+        {
+          "txid": "c6dc083e4c97af2ac9938025cefc1c80ae34e6bb290fead50f10be0267962f05",
+          "locktime": 1784865600,
+          "inscriptionValueSats": 330,
+          "feeReserveSats": 601
+        },
+        {
+          "txid": "3436e233a92a2811f7dfc279054c347c7e7be65a82b42280fe4dd42ccf339845",
+          "locktime": 1787574600,
+          "inscriptionValueSats": 330,
+          "feeReserveSats": 394
+        }
+      ]
+    },
+    {
       "action": "collection_offer",
       "status": "fixture-only-pending-v2-design-review",
       "preflightEndpoint": "/collection/{slug}/collection-offers/preflight",

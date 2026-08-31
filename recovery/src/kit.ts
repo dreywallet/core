@@ -124,6 +124,12 @@ export interface LadderEntry {
   witnessScriptHex: string;
 }
 
+export interface LocatedVaultScript {
+  branch: VaultBranch;
+  index: number;
+  witnessScriptHex: string;
+}
+
 /** Derive an address ladder. Every entry is regenerated from the policy. */
 export function deriveLadder(
   identity: VaultPolicyIdentityV1,
@@ -160,15 +166,31 @@ export function locateScript(
   identity: VaultPolicyIdentityV1,
   scriptPubKeyHex: string,
   searchDepth: number,
-): { branch: VaultBranch; index: number; witnessScriptHex: string } | undefined {
+): LocatedVaultScript | undefined {
   const wanted = scriptPubKeyHex.toLowerCase();
+  return locateScripts(identity, [wanted], searchDepth).get(wanted);
+}
+
+/** Locate many scripts with one derivation-space pass instead of one pass per UTXO. */
+export function locateScripts(
+  identity: VaultPolicyIdentityV1,
+  scriptPubKeyHexes: readonly string[],
+  searchDepth: number,
+): ReadonlyMap<string, LocatedVaultScript> {
+  const remaining = new Set(scriptPubKeyHexes.map((script) => script.toLowerCase()));
+  const located = new Map<string, LocatedVaultScript>();
   for (const branch of ['receive', 'change'] as const) {
     for (let index = 0; index <= searchDepth; index += 1) {
       const derived = derive(identity, branch, index);
-      if (derived.scriptPubKeyHex === wanted) {
-        return { branch, index, witnessScriptHex: derived.witnessScriptHex };
+      if (remaining.delete(derived.scriptPubKeyHex)) {
+        located.set(derived.scriptPubKeyHex, {
+          branch,
+          index,
+          witnessScriptHex: derived.witnessScriptHex,
+        });
+        if (remaining.size === 0) return located;
       }
     }
   }
-  return undefined;
+  return located;
 }

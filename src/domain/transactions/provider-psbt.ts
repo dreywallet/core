@@ -21,6 +21,7 @@ import {
 } from '../marketplaces/commitment';
 import { templateForResolution } from '../marketplaces/resolver';
 import { verifyOrdnetSaleKeyPath, verifyOrdnetSaleScriptPath } from '../marketplaces/ordnet-script-path';
+import { verifyOrdnetFoundryTimelockPath } from '../marketplaces/ordnet-foundry-path';
 import {
   assertProviderPsbtItemCounts,
   PROVIDER_MAX_PSBT_INPUT_SELECTIONS,
@@ -174,6 +175,8 @@ export interface ProviderSignInputBinding {
 
 export interface ProviderPsbtInputSelection {
   address: string;
+  publicKey?: string;
+  disableTweakSigner?: boolean;
   signingIndexes: number[];
   sigHash?: ProviderPsbtSighash | undefined;
 }
@@ -377,7 +380,11 @@ export function resolveProviderPsbtInputSelections(
   for (const declaration of inputsToSign ?? []) {
     for (const index of declaration.signingIndexes) {
       const planned = plan.inputs[index];
-      if (!planned || (declaration.sigHash !== undefined && planned.sighash !== declaration.sigHash)) {
+      const publicKeyMatches = declaration.publicKey === undefined ||
+        declaration.publicKey === planned?.derivation?.publicKeyHex ||
+        declaration.publicKey === planned?.derivation?.publicKeyHex.slice(2);
+      if (!planned || !publicKeyMatches ||
+          (declaration.sigHash !== undefined && planned.sighash !== declaration.sigHash)) {
         throw new Error('provider sighash declaration differs from prepared plan');
       }
     }
@@ -668,7 +675,9 @@ export function createProviderPsbtPlan(input: {
     consumedOutpoints.add(outpoint);
     const classification = byOutpoint.get(outpoint);
     if (!classification) throw new Error('gateway did not classify every input');
-    if (classification.confidence !== 'authoritative' ||
+    const linkedProvenance = input.linkedGroup?.inputProvenance[index];
+    const prospectiveFoundry = linkedProvenance?.kind === 'ordnet_foundry_future';
+    if ((!prospectiveFoundry && classification.confidence !== 'authoritative') ||
         classification.classificationRevision !== input.source.classificationRevision ||
         classification.classifiedTip.height !== input.source.coreTip.height ||
         classification.classifiedTip.hash !== input.source.coreTip.hash) {
@@ -680,16 +689,25 @@ export function createProviderPsbtPlan(input: {
       classification.scriptPubKey !== previous.scriptPubKey
     ) throw new Error('signed classification differs from PSBT prevout');
     const derivation = wallet.get(outpoint) ?? null;
-    const linkedProvenance = input.linkedGroup?.inputProvenance[index];
-    const linkedControl = linkedProvenance?.kind === 'linked_output'
+    const linkedControl = linkedProvenance?.kind === 'linked_output' ||
+      linkedProvenance?.kind === 'ordnet_foundry_future' || linkedProvenance?.kind === 'gateway'
       ? linkedProvenance.walletControl : undefined;
     if (derivation) {
       if (actual.tapLeafScript?.length) {
         const marketplaceAllowed = input.marketplace && marketplaceTemplate?.marketplaceId === 'ordnet' &&
           marketplaceRule?.allowTaprootScriptPath;
-        if ((!marketplaceAllowed && linkedControl !== 'ordnet_sale_script_path') ||
+        if ((!marketplaceAllowed && linkedControl !== 'ordnet_sale_script_path' &&
+            linkedControl !== 'ordnet_foundry_script_path') ||
             derivation.lane !== 'ordinals') throw new Error('Taproot script-path signing is unsupported');
-        verifyOrdnetSaleScriptPath(tx, index, derivation.publicKeyHex.slice(2));
+        if (linkedControl === 'ordnet_foundry_script_path') {
+          verifyOrdnetFoundryTimelockPath(
+            tx,
+            requestedIndexes ?? [],
+            derivation.publicKeyHex.slice(2),
+          );
+        } else {
+          verifyOrdnetSaleScriptPath(tx, index, derivation.publicKeyHex.slice(2));
+        }
       } else if (scriptPubKeyHex(derivation.publicKeyHex, derivation.lane, input.network) !== previous.scriptPubKey) {
         const marketplaceAllowed = input.marketplace && marketplaceTemplate?.marketplaceId === 'ordnet' &&
           marketplaceRule?.allowTaprootTreeKeyPath;
@@ -728,7 +746,7 @@ export function createProviderPsbtPlan(input: {
       }
     }
     if (actual.tapLeafScript?.length && derivation && !marketplaceRule?.allowTaprootScriptPath &&
-        linkedControl !== 'ordnet_sale_script_path') {
+        linkedControl !== 'ordnet_sale_script_path' && linkedControl !== 'ordnet_foundry_script_path') {
       throw new Error('Taproot script-path signing is unsupported');
     }
     planInputs.push({
@@ -811,6 +829,34 @@ export function createProviderPsbtPlan(input: {
       input.linkedGroup!.inputProvenance[index]?.kind === 'linked_output' &&
       input.linkedGroup!.inputProvenance[index].walletControl === 'ordnet_sale_key_path');
   const linkedOrdAlternativeLeg = linkedOrdSettlement || linkedOrdRecovery;
+  const linkedOrdFoundryWithdrawal = input.marketplace === undefined && input.linkedGroup !== undefined &&
+    selectedInputIndexes.length === 2 && selectedInputIndexes.every((index) => {
+      const provenance = input.linkedGroup!.inputProvenance[index];
+      return planInputs[index]?.sighash === SigHash.DEFAULT &&
+        (provenance?.kind === 'ordnet_foundry_future' || provenance?.kind === 'linked_output' ||
+          provenance?.kind === 'gateway') &&
+        provenance.walletControl === 'ordnet_foundry_script_path';
+    });
+  if (linkedOrdFoundryWithdrawal) {
+    const foundryProvenance = selectedInputIndexes.map((index) =>
+      input.linkedGroup!.inputProvenance[index]!);
+    const prospective = foundryProvenance.filter((entry) =>
+      entry.kind === 'ordnet_foundry_future').length;
+    if (prospective !== 0 && prospective !== 2) {
+      throw new Error('Foundry withdrawal may not mix future and classified inputs');
+    }
+    if (prospective === 0) {
+      const inscription = planInputs[0]!.classification;
+      const feeReserve = planInputs[1]!.classification;
+      const inscriptionOutpoint = `${planInputs[0]!.txid}:${planInputs[0]!.vout}`;
+      if (inscription.inscriptions.length !== 1 ||
+          inscription.inscriptions[0]!.satpoint !== `${inscriptionOutpoint}:0` ||
+          inscription.unsupportedAssetDetected || feeReserve.inscriptions.length !== 0 ||
+          feeReserve.unsupportedAssetDetected) {
+        throw new Error('classified Foundry inputs do not contain one offset-zero inscription and a clean fee reserve');
+      }
+    }
+  }
   let genericCommitment: MarketplaceCommitmentAnalysis | null = null;
   if (genericFlexibleIndexes.length > 0) {
     if (input.broadcast) {
@@ -880,7 +926,8 @@ export function createProviderPsbtPlan(input: {
     }
   }
   const flexibleCommitment = marketplaceCommitment ?? genericCommitment;
-  const protectedSatFlow = input.protectedSatFlow ?? (input.marketplace || genericCommitment
+  const protectedSatFlow = input.protectedSatFlow ??
+    (input.marketplace || genericCommitment || linkedOrdFoundryWithdrawal
     ? inferMarketplaceInscriptionFlows(planInputs, outputs)
     : inferExternalInscriptionFlows(planInputs, outputs));
   for (const index of genericFlexibleIndexes) {
@@ -900,6 +947,8 @@ export function createProviderPsbtPlan(input: {
   }
   const totalIn = planInputs.reduce((sum, item) => sum + item.valueSats, 0n);
   const totalOut = outputs.reduce((sum, item) => sum + item.valueSats, 0n);
+  const linkedOmbEscrow = input.marketplace?.resolution.templateId === 'omb-wiki-ordnet-list-v1' &&
+    input.marketplace.context.stage === 'escrow';
   // Only a partial commitment may legitimately show outputs above inputs: the
   // counterparty's inputs are still missing. A zero-fee exact request is safe to
   // review only when every wallet input is selected, every selected signature
@@ -907,7 +956,8 @@ export function createProviderPsbtPlan(input: {
   // marketplace-flexible commitment is involved. This is deliberately generic:
   // it does not claim to recognize any marketplace business semantics.
   const selectedSet = new Set(selectedInputIndexes);
-  const deferredZeroFee = flexibleCommitment === null && totalIn === totalOut && !input.broadcast &&
+  const deferredZeroFee = (flexibleCommitment === null || linkedOmbEscrow) &&
+    totalIn === totalOut && !input.broadcast &&
     (input.binding.providerMethod === 'signPsbt' ||
       input.binding.providerMethod === 'signMultipleTransactions') && selectedInputIndexes.length > 0 &&
     planInputs.every((planned, index) => planned.ownership !== 'wallet' || selectedSet.has(index)) &&
@@ -962,8 +1012,11 @@ export function createProviderPsbtPlan(input: {
       allowedSighashesByInput: Object.fromEntries(selectedInputIndexes.map((index) =>
         [index, [planInputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: selectedInputIndexes.filter((index) =>
-        input.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
-        input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path'),
+        (input.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' ||
+          input.linkedGroup?.inputProvenance[index]?.kind === 'ordnet_foundry_future' ||
+          input.linkedGroup?.inputProvenance[index]?.kind === 'gateway') &&
+        (input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path' ||
+          input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_foundry_script_path')),
       allowTaprootTreeKeyPathInputIndexes: selectedInputIndexes.filter((index) =>
         input.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
         input.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_key_path'),
@@ -1003,7 +1056,8 @@ export function createProviderPsbtPlan(input: {
     item.scriptType !== 'p2wpkh' && item.scriptType !== 'p2tr'))) {
     policyError('unsupported_wallet_script', 'wallet broadcast requires fully verifiable P2WPKH or P2TR inputs');
   }
-  if (!input.marketplace && (input.kind ?? 'provider_psbt') === 'provider_psbt' && analysisResult.analysis.warnings.some(
+  if (!input.marketplace && !linkedOrdFoundryWithdrawal &&
+      (input.kind ?? 'provider_psbt') === 'provider_psbt' && analysisResult.analysis.warnings.some(
     (warning) => warning.code === 'high_absolute_fee' || warning.code === 'high_relative_fee',
   )) {
     // Advanced signing may acknowledge an unknown deterministic business
@@ -1272,8 +1326,11 @@ function signProviderPsbtPlanInternal(input: {
       allowedSighashesByInput: Object.fromEntries(selected.map((index) =>
         [index, [input.plan.inputs[index]!.sighash]])),
       allowTaprootScriptPathInputIndexes: selected.filter((index) =>
-        input.plan.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
-        input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path'),
+        (input.plan.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' ||
+          input.plan.linkedGroup?.inputProvenance[index]?.kind === 'ordnet_foundry_future' ||
+          input.plan.linkedGroup?.inputProvenance[index]?.kind === 'gateway') &&
+        (input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_script_path' ||
+          input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_foundry_script_path')),
       allowTaprootTreeKeyPathInputIndexes: selected.filter((index) =>
         input.plan.linkedGroup?.inputProvenance[index]?.kind === 'linked_output' &&
         input.plan.linkedGroup.inputProvenance[index].walletControl === 'ordnet_sale_key_path'),

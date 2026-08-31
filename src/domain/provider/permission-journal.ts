@@ -3,8 +3,12 @@
  *
  * Every grant/revoke is encrypted with the active vault DEK. A write is staged,
  * validated, then committed; startup promotes a valid one-event extension left
- * in staging by an MV3 termination. Revoke tombstones are replayed after every
- * restart, so a stale grant cannot be revived.
+ * in staging by an MV3 termination. Revoke tombstones survive ordinary restarts
+ * in untampered storage. This journal authenticates the snapshot it receives but
+ * has no external monotonic anchor; restoring an older valid snapshot can revive
+ * a grant. Consumers independently scope silent reconnect to the current vault,
+ * session, account, network, exact origin/document authority, and exact requested
+ * categories. Those checks limit use; they do not detect storage rollback.
  */
 import { z } from 'zod';
 import { MAX_ACCOUNT_INDEX } from '../accounts/limits';

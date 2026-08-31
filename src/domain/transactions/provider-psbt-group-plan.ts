@@ -1,3 +1,4 @@
+import { Transaction } from '@scure/btc-signer';
 import { bytesToBase64, bytesToHex, hexToBytes } from '../vault/encoding';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import {
@@ -279,13 +280,87 @@ function proveSettlement(
 function sameMarketplaceWorkflow(left: ProviderPsbtPlanV3, right: ProviderPsbtPlanV3): boolean {
   if (Boolean(left.marketplace) !== Boolean(right.marketplace)) return false;
   if (!left.marketplace || !right.marketplace) return true;
-  return left.marketplace.context.marketplaceId === right.marketplace.context.marketplaceId &&
+  return left.marketplace.resolution.templateId === right.marketplace.resolution.templateId &&
+    left.marketplace.context.version === right.marketplace.context.version &&
+    left.marketplace.context.marketplaceId === right.marketplace.context.marketplaceId &&
     left.marketplace.context.templateVersion === right.marketplace.context.templateVersion &&
     left.marketplace.context.action === right.marketplace.context.action &&
     left.marketplace.context.role === right.marketplace.context.role &&
     left.marketplace.context.assetKind === right.marketplace.context.assetKind &&
     left.marketplace.context.stepCount === right.marketplace.context.stepCount &&
-    left.marketplace.context.workflowId === right.marketplace.context.workflowId;
+    left.marketplace.context.workflowId === right.marketplace.context.workflowId &&
+    left.marketplace.context.broadcaster === right.marketplace.context.broadcaster &&
+    left.marketplace.context.expiresAt === right.marketplace.context.expiresAt &&
+    left.marketplace.context.revision === right.marketplace.context.revision &&
+    sameCanonical(left.marketplace.context.identifiers, right.marketplace.context.identifiers) &&
+    sameCanonical(left.marketplace.context.economics, right.marketplace.context.economics);
+}
+
+function assertOmbOrdnetListingWorkflow(items: readonly ProviderPsbtGroupItemV1[]): void {
+  if (items[0]?.plan.marketplace?.resolution.templateId !== 'omb-wiki-ordnet-list-v1') return;
+  if (items.length !== 3) throw new Error('OMB ord.net listing requires exactly three transactions');
+  const stages = ['escrow', 'settlement', 'recovery'] as const;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]!;
+    const marketplace = item.plan.marketplace;
+    if (!marketplace || marketplace.resolution.templateId !== 'omb-wiki-ordnet-list-v1' ||
+        marketplace.context.step !== index + 1 || marketplace.context.stepCount !== 3 ||
+        marketplace.context.stage !== stages[index] || marketplace.context.broadcaster !== 'site') {
+      throw new Error('OMB ord.net listing steps are missing, duplicated, or reordered');
+    }
+  }
+  const first = items[0]!.plan;
+  const settlement = items[1]!.plan;
+  const recovery = items[2]!.plan;
+  const context = first.marketplace!.context;
+  const identifiers = context.identifiers;
+  const economics = context.economics;
+  if (!identifiers?.inscriptionId || !identifiers.inscriptionOutpoint || !identifiers.preflightHandle ||
+      !economics?.priceSats || !economics.sellerProceedsSats || !economics.marketplaceFeeSats ||
+      !economics.payoutAddress || !economics.assetDestination ||
+      BigInt(economics.sellerProceedsSats) + BigInt(economics.marketplaceFeeSats) !== BigInt(economics.priceSats)) {
+    throw new Error('OMB ord.net listing outcome binding is incomplete or inconsistent');
+  }
+  if (first.inputs.length !== 1 || first.outputs.length !== 1 ||
+      first.selectedInputIndexes?.length !== 1 || first.selectedInputIndexes[0] !== 0 ||
+      `${first.inputs[0]!.txid}:${first.inputs[0]!.vout}` !== identifiers.inscriptionOutpoint ||
+      first.inputs[0]!.classification.inscriptions.length !== 1 ||
+      first.inputs[0]!.classification.inscriptions[0]!.inscriptionId !== identifiers.inscriptionId ||
+      first.inputs[0]!.classification.inscriptions[0]!.satpoint !== `${identifiers.inscriptionOutpoint}:0` ||
+      first.inputs[0]!.classification.unsupportedAssetDetected || first.inputs[0]!.sighash !== 0) {
+    throw new Error('OMB ord.net escrow input or inscription provenance differs');
+  }
+  const parentTxid = topologyTxid(first);
+  const settlementSelection = items[1]!.inputsToSign?.find((selection) =>
+    selection.signingIndexes.includes(0));
+  if (settlement.selectedInputIndexes?.length !== 1 || settlement.selectedInputIndexes[0] !== 0 ||
+      settlement.inputs[0]?.txid !== parentTxid || settlement.inputs[0]?.vout !== 0 ||
+      settlement.inputs[0]?.sighash !== 0x83 || settlementSelection?.disableTweakSigner !== true ||
+      settlement.outputs[0]?.address !== economics.payoutAddress ||
+      settlement.outputs[0]!.valueSats < BigInt(economics.sellerProceedsSats)) {
+    throw new Error('OMB ord.net settlement authorization differs from the approved outcome');
+  }
+  const recoveryFlows = recovery.protectedSatFlow.filter((flow) =>
+    flow.inscriptionId === identifiers.inscriptionId);
+  if (recovery.inputs.length !== 1 || recovery.outputs.length !== 1 ||
+      recovery.selectedInputIndexes?.length !== 1 || recovery.selectedInputIndexes[0] !== 0 ||
+      recovery.inputs[0]!.txid !== parentTxid || recovery.inputs[0]!.vout !== 0 ||
+      recovery.inputs[0]!.sighash !== 1 || recovery.outputs[0]!.address !== economics.assetDestination ||
+      recovery.outputs[0]!.derivation?.lane !== 'ordinals' || recoveryFlows.length !== 1 ||
+      recoveryFlows[0]!.inputOffset !== 0n || recoveryFlows[0]!.outputIndex !== 0 ||
+      recoveryFlows[0]!.outputOffset !== 0n) {
+    throw new Error('OMB ord.net recovery path differs from the approved destination');
+  }
+}
+
+function topologyTxid(plan: ProviderPsbtPlanV3): string {
+  const unsigned = Transaction.fromPSBT(hexToBytes(plan.psbtHex), {
+    lowR: true,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  }).unsignedTx;
+  const first = getCryptoProvider().sha256(unsigned);
+  return bytesToHex(getCryptoProvider().sha256(first).reverse());
 }
 
 /**
@@ -419,6 +494,7 @@ function validateItems(
     !sameMarketplaceWorkflow(firstMarketplace, item.plan))) {
     throw new Error('provider group marketplace workflow differs between items');
   }
+  assertOmbOrdnetListingWorkflow(items);
   const topology = deriveLinkedProviderPsbtGroup(items.map((item) => ({
     nodeId: item.nodeId,
     psbtBase64: bytesToBase64(hexToBytes(item.plan.psbtHex)),
@@ -430,10 +506,10 @@ function validateItems(
       throw new Error('provider group expected transaction id differs from the PSBT');
     }
   }
-  const linked = !topology.independent;
+  const preparedGroup = items.some((item) => item.plan.linkedGroup !== undefined);
   const firstLinked = items.find((item) => item.plan.linkedGroup)?.plan.linkedGroup;
   let preparation: PreparedProviderPsbtGroupInputsV1 | null = null;
-  if (linked) {
+  if (preparedGroup) {
     if (!firstLinked || items.some((item) => !item.plan.linkedGroup ||
         item.plan.linkedGroup.groupId !== firstLinked.groupId ||
         item.plan.linkedGroup.preparationHash !== firstLinked.preparationHash ||
@@ -471,6 +547,7 @@ function validateItems(
         } }),
       })),
       externalClassifications: uniqueRoots,
+      prospectiveOutpoints: supplied.prospectiveOutpoints,
       source: items[0]!.plan.source,
       walletControl: {
         network: items[0]!.plan.network,
@@ -507,8 +584,8 @@ function validateItems(
       }
     }
     preparation = supplied;
-  } else if (items.some((item) => item.plan.linkedGroup)) {
-    throw new Error('independent provider group may not carry linked preparation evidence');
+  } else if (suppliedPreparation) {
+    throw new Error('provider group may not carry unused preparation evidence');
   }
   const byNodeId = new Map(items.map((item) => [item.nodeId, item]));
   const topologyByNodeId = new Map(topology.nodes.map((node) => [node.nodeId, node]));
