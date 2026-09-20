@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HDKey } from '@scure/bip32';
 import { NETWORK, TEST_NETWORK, p2wpkh } from '@scure/btc-signer';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installTestCryptoProvider } from '../helpers/install-crypto-provider';
 import { bytesToHex } from '../../src/domain/vault/encoding';
 import {
@@ -60,6 +60,8 @@ import {
 import { reviewFacts, renderReview } from '../../recovery/src/display';
 import { combineResults, finalize, signAsRole } from '../../recovery/src/signing';
 import {
+  main,
+  terminalText,
   RECOVERY_MAX_SEARCH_DEPTH,
   RECOVERY_MAX_UTXOS,
   parseRecoverySearchDepth,
@@ -565,5 +567,62 @@ describe('the source-digest rule', () => {
     expect(treeDigest(base, files)).toBe(treeDigest(base, [...files]));
     expect(treeDigest(base, files)).not.toBe(treeDigest(base, [...files].reverse()));
     expect(treeDigest(base, files)).toMatch(/^[0-9a-f]{64}$/u);
+  });
+});
+
+
+describe('recovery CLI review and terminal boundaries', () => {
+  it('prints untrusted kit metadata and errors as inert text', async () => {
+    const h = harness('signet');
+    const kit = verifyKitHex(h.kitHex).kit;
+    kit.vaultLabel = 'Vault\x1b[2J\rforged';
+    kit.signerLabels[0] = 'A\x9b2J';
+    kit.recoveryInstructions = 'First line\nSecond\tline\u202e\x1b]0;title\x07';
+    const directory = mkdtempSync(join(tmpdir(), 'drey-terminal-test-'));
+    const path = join(directory, 'kit.hex');
+    writeFileSync(path, bytesToHex(serializeVaultRecoveryKit(kit)));
+    let stdout = '';
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { stdout += String(chunk); return true; });
+    try {
+      expect(await main(['read-kit', '--kit', path])).toBe(0);
+      expect(stdout).toContain('Vault\\u001b[2J\\u000dforged');
+      expect(stdout).toContain('A\\u009b2J');
+      expect(stdout).toContain('First line\nSecond\tline\\u202e\\u001b]0;title\\u0007');
+      expect(terminalText('bad\x1b[31m\b\u2066')).toBe('bad\\u001b[31m\\u0008\\u2066');
+    } finally { output.mockRestore(); rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('reviews zero, one and two signatures, while refusing a changed single-partial envelope', async () => {
+    const h = harness('signet');
+    const inputs = resolveInputs(h.identity, utxosFor(h, [{ branch: 'receive', index: 0, sats: '25000' }]));
+    const { plan } = buildRecoveryPlan({ identity: h.identity, inputs,
+      destinationAddress: exitAddress('signet'), feeRateSatPerVb: 3n, nowMs: CREATED });
+    const partials = (['desktop-a', 'recovery-c'] as const).map((role) => signAsRole({
+      identity: h.identity, plan, role, mnemonic: MNEMONICS[role], nowMs: CREATED,
+    }));
+    const directory = mkdtempSync(join(tmpdir(), 'drey-review-test-'));
+    const path = join(directory, 'session.json');
+    let stdout = '';
+    let stderr = '';
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { stdout += String(chunk); return true; });
+    const errors = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => { stderr += String(chunk); return true; });
+    const session = { format: 'drey-vault-recovery-v1', kitHex: h.kitHex, plan,
+      unsignedPsbtHex: constructVaultPsbt(h.identity, plan), partials: [] as typeof partials };
+    try {
+      for (const count of [0, 1, 2]) {
+        stdout = '';
+        session.partials = partials.slice(0, count);
+        writeFileSync(path, JSON.stringify(session));
+        expect(await main(['review', '--session', path])).toBe(0);
+        expect(stdout).toContain('RECOVERY SPEND');
+        expect(stdout).toContain(count === 0 ? 'none' : 'A (Desktop)');
+        expect(stdout).toContain('2 of 3 distinct roles');
+      }
+      session.partials = [{ ...partials[0]!, priorPsbtHash: '00'.repeat(32) }];
+      writeFileSync(path, JSON.stringify(session));
+      expect(await main(['review', '--session', path])).toBe(1);
+      expect(stderr).toContain('binding differs');
+      expect(() => combineResults(h.identity, plan, [partials[0]!])).toThrow(/two or three/u);
+    } finally { output.mockRestore(); errors.mockRestore(); rmSync(directory, { recursive: true, force: true }); }
   });
 });

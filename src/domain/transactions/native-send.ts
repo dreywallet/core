@@ -67,7 +67,9 @@ export function resolvePayableAddress(address: string, network: Network): Payabl
   let scriptPubKey: string;
   try {
     const codec = Address(bitcoinNetwork(network));
-    scriptPubKey = bytesToHex(OutScript.encode(codec.decode(address)));
+    const decoded = codec.decode(address);
+    scriptPubKey = bytesToHex(OutScript.encode(decoded));
+    address = codec.encode(decoded);
   } catch {
     return {
       ok: false,

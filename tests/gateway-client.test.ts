@@ -761,3 +761,71 @@ describe('GatewayClient M7 signed endpoints', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('GatewayClient Rune endpoint boundaries', () => {
+  function request() {
+    return { network: 'signet' as const, transactionHex: '00', txid: 'd'.repeat(64), wtxid: 'e'.repeat(64), feeTarget: 6 as const,
+      feeQuote: feeQuoteResponseSchema.parse(JSON.parse(new TextDecoder().decode(signedFees))),
+      runeIntent: { runeId: '840000:1', amount: '1000', recipientScript: `5120${'a'.repeat(64)}`, tokenChangeScript: null } };
+  }
+  it.each(['http', 'network', 'malformed'] as const)('dispatches Rune broadcast once on %s failure', async failure => {
+    let calls = 0;
+    const result = await makeClient(async (input, init) => {
+      expect(String(input)).toBe('http://127.0.0.1:8080/v1/runes/broadcast');
+      expect(JSON.parse(String(init?.body)).runeIntent).toEqual(request().runeIntent);
+      calls++;
+      if (failure === 'network') throw new TypeError('connection lost after dispatch');
+      return new Response(failure === 'malformed' ? '{}' : 'unavailable', { status: failure === 'http' ? 503 : 200 });
+    }).broadcastRuneTransaction(request());
+    expect(result.ok).toBe(false); expect(calls).toBe(1);
+  });
+  it('does not dispatch an invalid Rune intent and safely rejects nonnumeric values', async () => {
+    let calls = 0;
+    const client = makeClient(async () => { calls++; return new Response('{}'); });
+    for (const amount of ['0', 'NaN', '1.2']) expect(await client.broadcastRuneTransaction({ ...request(), runeIntent: { ...request().runeIntent, amount } })).toEqual({ ok: false, reason: 'schema' });
+    expect(calls).toBe(0);
+  });
+  it('never treats an old gateway as empty Rune evidence', async () => {
+    let calls = 0;
+    const result = await makeClient(async () => { calls++; return new Response('missing', { status: 404 }); })
+      .fetchRuneOutputs({ network: 'signet', outpoints: [] });
+    expect(result).toEqual({ ok: false, reason: 'http', httpStatus: 404 }); expect(calls).toBe(1);
+  });
+  it('does not retry a Rune broadcast after its dispatch deadline', async () => {
+    vi.useFakeTimers(); let calls = 0;
+    const pending = makeClient(async (_input, init) => {
+      calls++;
+      return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+    }).broadcastRuneTransaction(request());
+    await vi.advanceTimersByTimeAsync(SIGNED_ENDPOINT_DEADLINE_MS);
+    expect(await pending).toEqual({ ok: false, reason: 'timeout' }); expect(calls).toBe(1);
+  });
+});
+
+
+describe('GatewayClient Rune history binding', () => {
+  const request = { network: 'signet' as const, scriptHashes: ['1'.repeat(64)], transactions: [{ txid: '2'.repeat(64), wtxid: '3'.repeat(64), transactionHex: '00' }] };
+  it('binds authenticated history to the exact requested scripts and transaction identities', async () => {
+    const kp = makeTestKeypair();
+    const envelopeKeys = ['instanceId', 'network', 'requestNonce', 'timestamp', 'coreTip', 'indexTip', 'classificationRevision', 'capabilities'];
+    const base = Object.fromEntries(envelopeKeys.map((key) => [key, classifyTemplate[key]]));
+    const valid = { ...base, requestNonce: FIXTURE_NONCE, protocolVersion: 2, runeProtocol: 'ord-0.27.1/native-v1', requestedScriptHashes: request.scriptHashes, historyComplete: false, receipts: [], effects: [], reconciliation: [{ txid: request.transactions[0]!.txid, wtxid: request.transactions[0]!.wtxid, status: 'indeterminate', confirmedSpenderTxid: null, conflictedAncestorTxid: null }] };
+    for (const [response, expected] of [[valid, true], [{ ...valid, requestedScriptHashes: ['4'.repeat(64)] }, false],
+      [{ ...valid, reconciliation: [] }, false], [{ ...valid, reconciliation: [{ ...valid.reconciliation[0], wtxid: '4'.repeat(64) }] }, false]] as const) {
+      let calls = 0;
+      const body = signTestBody(response, kp);
+      const result = await makeClient(async (url) => { calls++; expect(String(url)).toContain('/v1/runes/history'); return new Response(body.slice().buffer); }, { publicKeyHex: kp.publicKeyHex }).fetchRuneHistory(request);
+      expect(result.ok).toBe(expected); expect(calls).toBe(1);
+    }
+  });
+  it.each(['http', 'network', 'malformed'] as const)('does not retry failed history reads: %s', async (failure) => {
+    let calls = 0;
+    const result = await makeClient(async () => { calls++; if (failure === 'network') throw new TypeError('lost connection'); return new Response('{}', { status: failure === 'http' ? 503 : 200 }); }).fetchRuneHistory(request);
+    expect(result.ok).toBe(false); expect(calls).toBe(1);
+  });
+  it('rejects an oversized request before dispatch', async () => {
+    const fetchFn = vi.fn();
+    expect(await makeClient(fetchFn).fetchRuneHistory({ ...request, scriptHashes: Array(201).fill('1'.repeat(64)) })).toEqual({ ok: false, reason: 'schema' });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});

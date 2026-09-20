@@ -318,6 +318,9 @@ export const utxoListResultSchema = z.object({ utxos: z.array(z.object({
   txid: hexId, vout: voutSchema, valueSats: sats, effectiveValueSats: sats,
   accountId: publicAccountId, account: z.number().int().nonnegative(),
   lane: z.enum(['payment','ordinals']), path: z.string(),
+  /** Exact address encoded from the scanner-verified cached script. */
+  address: z.string().min(1),
+  addressRole: z.enum(['primary', 'recovered', 'change']),
   classification: z.string(), eligible: z.boolean(), reasons: z.array(z.string()), frozen: z.boolean(),
   dustQuarantined: z.boolean(),
   wrongLane: z.enum(['normal','protected_wrong_address','reserved_ordinal_lane_btc']),

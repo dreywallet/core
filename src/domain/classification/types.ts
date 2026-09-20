@@ -15,6 +15,7 @@ import type {
   Tip,
 } from '../gateway/contract';
 import type { AddressKind } from '../keys/derivation';
+import { isP2shScriptPubKey } from '../keys/script-hash';
 
 export type { PrimaryClass } from '../gateway/contract';
 
@@ -61,6 +62,8 @@ export interface WalletUtxo {
   height: number | null;
   /** Established per the §18.2 change signal + local internal-chain checks. */
   walletCreatedChange: boolean;
+  /** Set for discovered script families that remain recovery-only in v1. */
+  recoveryOnly?: boolean | undefined;
   /** null = never classified — displays and gates as 'unknown'. */
   facts: AssetFacts | null;
   flags: UserFlags;
@@ -70,6 +73,13 @@ export type DisplayClass = PrimaryClass | 'user_frozen' | 'dust_quarantined';
 
 export function outpointKey(outpoint: WalletOutpoint): string {
   return `${outpoint.txid}:${outpoint.vout}`;
+}
+
+/** Script proof plus the persisted marker make old and new caches fail closed. */
+export function isRecoveryOnlyUtxo(
+  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'recoveryOnly'>,
+): boolean {
+  return utxo.recoveryOnly === true || isP2shScriptPubKey(utxo.scriptPubKey);
 }
 
 /**

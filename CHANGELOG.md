@@ -3,6 +3,47 @@
 Notable user-facing changes to `@drey/core` are recorded here. Earlier releases
 are available from the private release tags.
 
+## 0.20.4
+
+### Fixed
+
+- Bind pending-change claims to their encrypted-cache key and recomputed plan
+  hash before they can affect unconfirmed eligibility.
+- Label legacy recovery-only addresses as recovered and avoid unsupported fee
+  estimation for inputs the wallet cannot plan.
+
+## 0.20.3
+
+### Fixed
+
+- Preserve the Vault coordinator's independent exact-plan recognition for
+  unconfirmed change while retaining claim-gated pending-change protection in
+  Spending wallets.
+
+## 0.20.2
+
+### Added
+
+- Recognize exact locally-created unconfirmed payment change so a pending send
+  can keep its verified change available without trusting unrelated mempool
+  outputs.
+- Return scanner-verified address and address-role metadata for coin control.
+- Discover legacy Xverse nested-SegWit outputs as explicitly recovery-only.
+
+### Changed
+
+- Scan the complete locally burned change-address prefix and skip Xverse scan
+  lanes that are byte-identical to standard account-zero lanes.
+- Keep unclaimed unconfirmed outputs degraded until confirmed gateway evidence
+  or an exact local payment-change claim makes them safe.
+
+## 0.19.5
+
+### Security
+
+- Reject serialized Community Vault position transfers whose buyer funding or
+  change does not belong to the seller-authorized buyer payout identity.
+
 ## 0.19.4
 
 ### Added

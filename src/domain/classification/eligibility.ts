@@ -9,9 +9,10 @@
  */
 import type { FreshnessReport } from '../gateway/freshness';
 import { isAuthoritativeCardinalClean } from '../gateway/contract';
-import { outpointKey, type WalletUtxo } from './types';
+import { isRecoveryOnlyUtxo, outpointKey, type WalletUtxo } from './types';
 
 export type IneligibleReason =
+  | 'recovery_only'
   | 'not_cardinal_clean'
   | 'classification_stale'
   | 'user_frozen'
@@ -53,7 +54,15 @@ export function evaluateEligibility(
 ): EligibilityResult {
   const reasons: IneligibleReason[] = [];
 
-  if (!isAuthoritativeCardinalClean(utxo.facts)) reasons.push('not_cardinal_clean');
+  const recoveryOnly = isRecoveryOnlyUtxo(utxo);
+  if (recoveryOnly) {
+    // Keep the script-family limitation distinguishable to clients. This is
+    // still a hard ineligibility; callers must not fall back to ordinary
+    // cardinal-clean selection when they see this reason.
+    reasons.push('recovery_only');
+  } else if (!isAuthoritativeCardinalClean(utxo.facts)) {
+    reasons.push('not_cardinal_clean');
+  }
 
   const revisionFresh =
     utxo.facts !== null && utxo.facts.classificationRevision === ctx.activeRevision;
@@ -65,7 +74,12 @@ export function evaluateEligibility(
     reasons.push('unconfirmed_not_wallet_change');
   }
   if (ctx.lockedOutpoints.has(outpointKey(utxo.outpoint))) reasons.push('plan_locked');
-  if (utxo.valueSats - ctx.marginalFeeSatsFor(utxo) <= 0n) reasons.push('uneconomic');
+  // Recovery-only script families have no supported planner input size. Their
+  // hard reason is sufficient, and callers must not estimate an input the
+  // wallet cannot construct merely to render balances or coin control.
+  if (!recoveryOnly && utxo.valueSats - ctx.marginalFeeSatsFor(utxo) <= 0n) {
+    reasons.push('uneconomic');
+  }
 
   return { eligible: reasons.length === 0, reasons };
 }

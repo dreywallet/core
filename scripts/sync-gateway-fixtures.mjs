@@ -17,6 +17,7 @@ const sourceDir = join(gatewayRepo, 'fixtures');
 const targetDir = join(extensionRoot, 'tests', 'fixtures', 'gateway');
 
 export const SYNCED_FIXTURES = [
+  'rune.outputs.signed.json',
   'status.signed.json',
   'status.wrong-network.json',
   'status.tampered-signature.json',

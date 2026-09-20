@@ -86,6 +86,16 @@ describe('M2m payable address resolution', () => {
     p2tr: 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr',
   } as const;
 
+  it('canonicalizes uppercase witness addresses after validation and rejects mixed case', () => {
+    for (const address of [PAYABLE.p2wpkh, PAYABLE.p2wsh, PAYABLE.p2tr]) {
+      expect(resolvePayableAddress(address.toUpperCase(), 'mainnet'))
+        .toEqual(resolvePayableAddress(address, 'mainnet'));
+      expect(resolvePayableAddress(`BC${address.slice(2)}`, 'mainnet').ok).toBe(false);
+    }
+    expect(resolvePayableAddress(PAYABLE.p2pkh, 'mainnet'))
+      .toMatchObject({ ok: true, value: { address: PAYABLE.p2pkh } });
+  });
+
   it('resolves all five established payable types and preserves the original address', () => {
     for (const [kind, address] of Object.entries(PAYABLE)) {
       const result = resolvePayableAddress(address, 'mainnet');

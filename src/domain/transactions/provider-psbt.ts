@@ -6,7 +6,8 @@ import { scriptPubKeyHex } from '../keys/script-hash';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../vault/encoding';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import { analyzePsbtHex, analyzeRawTransactionHex, decodeSighash, type TransactionAnalysis } from './analysis';
-import { estimateVsize, payableScriptKind, scriptKind } from './fees';
+import { payableScriptKind, scriptKind } from './fees';
+import { estimateProviderVsize } from './provider-psbt-size';
 import type { PlanDerivation, PlanInput, PlanOutput, TransactionPlan } from './plan';
 import type { InscriptionPreviewSet, StoredInscriptionPreviewSet } from './inscription-previews';
 import { approvalInscriptionItems, cloneInscriptionPreviewSet, storedPreviewSet } from './inscription-previews';
@@ -611,6 +612,20 @@ export function createProviderPsbtPlan(input: {
     throw new Error('provider wallet output public account identity mismatch');
   }
   const marketplaceTemplate = input.marketplace ? templateForResolution(input.marketplace.resolution) : null;
+  for (const deadline of [input.expiresAt, input.marketplace?.context.expiresAt]) {
+    if (deadline !== undefined && (!Number.isSafeInteger(deadline) || deadline <= input.now)) {
+      throw new Error('provider plan expired or invalid expiry');
+    }
+  }
+  const expiresAt = Math.min(
+    input.now + Math.min(5 * 60_000, marketplaceTemplate?.freshnessMs ?? 5 * 60_000),
+    input.expiresAt ?? Number.MAX_SAFE_INTEGER,
+    input.marketplace?.context.expiresAt ?? Number.MAX_SAFE_INTEGER,
+  );
+  if (!Number.isSafeInteger(input.now) || input.now < 0 ||
+      !Number.isSafeInteger(expiresAt) || expiresAt <= input.now) {
+    throw new Error('provider plan expired or invalid expiry');
+  }
   const marketplaceRule = marketplaceTemplate?.steps.find((rule) => rule.step === input.marketplace!.context.step) ??
     (marketplaceTemplate?.stepCount === 'context' ? marketplaceTemplate.steps[0] : undefined);
   const selectedMarketplaceIndexes = input.marketplace?.selectedInputIndexes === undefined
@@ -651,7 +666,9 @@ export function createProviderPsbtPlan(input: {
     marketplaceTemplate.templateVersion !== input.marketplace.context.templateVersion ||
     marketplaceTemplate.action !== input.marketplace.context.action ||
     marketplaceTemplate.role !== input.marketplace.context.role ||
-    marketplaceTemplate.assetKind !== input.marketplace.context.assetKind
+    marketplaceTemplate.assetKind !== input.marketplace.context.assetKind ||
+    (typeof marketplaceTemplate.stepCount === 'number' &&
+      marketplaceTemplate.stepCount !== input.marketplace.context.stepCount)
   )) throw new Error('marketplace authority or context differs from the pinned template');
   if (input.marketplace && input.broadcast !== (input.marketplace.context.broadcaster === 'wallet')) {
     throw new Error('marketplace broadcaster differs from the provider broadcast request');
@@ -984,7 +1001,7 @@ export function createProviderPsbtPlan(input: {
   }
   let vsize: bigint | null = null;
   try {
-    vsize = estimateVsize(planInputs.map((item) => item.scriptPubKey), outputs.map((item) => item.scriptPubKey));
+    vsize = estimateProviderVsize(tx, planInputs, outputs.map((item) => item.scriptPubKey));
   } catch {
     vsize = null;
   }
@@ -1086,7 +1103,7 @@ export function createProviderPsbtPlan(input: {
     version: 5 as const,
     planId: input.planId,
     createdAt: input.now,
-    expiresAt: Math.min(input.now + 5 * 60_000, input.expiresAt ?? Number.MAX_SAFE_INTEGER),
+    expiresAt,
     network: input.network,
     vaultId: input.vaultId,
     sessionId: input.sessionId,
@@ -1431,6 +1448,11 @@ export async function signValidatedProviderPsbtGroupAtomically(input: {
 
 export function assertProviderPsbtPlan(plan: ProviderPsbtPlanV3): void {
   if (!plan || plan.version !== 5 || !plan.inscriptionPreviews ||
+      !Number.isSafeInteger(plan.createdAt) || plan.createdAt < 0 ||
+      !Number.isSafeInteger(plan.expiresAt) || plan.expiresAt <= plan.createdAt ||
+      (plan.marketplace?.context.expiresAt !== undefined &&
+        (!Number.isSafeInteger(plan.marketplace.context.expiresAt) ||
+          plan.expiresAt > plan.marketplace.context.expiresAt)) ||
       !new RegExp(`^acct_${plan.network}_[0-9a-f]{64}$`, 'u').test(plan.accountId) ||
       plan.inputs.some((input) => input.ownership === 'wallet' &&
         (input.derivation?.accountId !== plan.accountId || input.derivation.account !== plan.account)) ||

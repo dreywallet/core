@@ -194,7 +194,14 @@ class CborReader {
         fail('invalid-format', 'CBOR text is not valid UTF-8');
       }
     }
-    if (head.major === 4) return Array.from({ length: head.value }, () => this.value(depth + 1));
+    if (head.major === 4) {
+      // Every child needs at least one item and one encoded byte. Check before
+      // Array.from can allocate storage from an untrusted declared length.
+      if (head.value > 512 - this.items || head.value > this.input.length - this.offset) {
+        fail('limit-exceeded', 'CBOR array exceeds the remaining item or byte budget');
+      }
+      return Array.from({ length: head.value }, () => this.value(depth + 1));
+    }
     if (head.major === 5) {
       const result = new Map<number, CborValue>();
       let previous = -1;

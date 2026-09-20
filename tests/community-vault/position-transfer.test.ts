@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { NETWORK, SigHash, Transaction, p2wpkh } from '@scure/btc-signer';
 
 import { signBip322Simple } from '../../src/domain/transactions/bip322';
-import { bytesToHex, hexToBytes } from '../../src/domain/vault/encoding';
+import { getCryptoProvider } from '../../src/domain/vault/crypto-provider';
+import { bytesToHex, hexToBytes, utf8ToBytes } from '../../src/domain/vault/encoding';
 import { createCommunityVaultPolicy } from '../../src/domain/community-vault/policy';
 import {
   approveCommunityVaultPositionTransfer,
@@ -16,6 +17,7 @@ import {
   finalizeCommunityVaultPositionTransferPsbt,
   validateCommunityVaultPositionTransferPsbt,
 } from '../../src/domain/community-vault/position-transfer';
+import { createCommunityVaultSpendPlan } from '../../src/domain/community-vault/psbt';
 import {
   reviewCommunityVaultPositionTransferBuyerProviderRequest,
   reviewCommunityVaultPositionTransferOwnerProviderRequest,
@@ -31,6 +33,37 @@ beforeAll(() => installTestCryptoProvider());
 
 const CREATED = '1800000000000';
 const EXPIRES = '1800003600000';
+const TRANSFER_DOMAIN = 'drey-community-vault-position-transfer-v1';
+
+function canonical(value: unknown, omitted: ReadonlySet<string> = new Set()): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonical(item, omitted));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !omitted.has(key))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, canonical(child, omitted)]));
+  }
+  return value;
+}
+
+function refreshMutablePlanDigests(plan: CommunityVaultPositionTransferPlanV1): void {
+  const {
+    planDigest: _planDigest,
+    unsignedTransactionHex: _unsignedTransactionHex,
+    ...spendPlanDraft
+  } = plan.spendPlan;
+  void _planDigest;
+  void _unsignedTransactionHex;
+  plan.spendPlan = createCommunityVaultSpendPlan(spendPlanDraft);
+
+  const prefix = utf8ToBytes(TRANSFER_DOMAIN);
+  const body = utf8ToBytes(JSON.stringify(canonical(plan, new Set(['transferDigest']))));
+  const bytes = new Uint8Array(prefix.length + 1 + body.length);
+  bytes.set(prefix);
+  bytes[prefix.length] = 0;
+  bytes.set(body, prefix.length + 1);
+  plan.transferDigest = bytesToHex(getCryptoProvider().sha256(bytes));
+}
 
 function transferFixture(options: { eligibility?: 'anyone' | 'omb-holders-only' } = {}) {
   const { policy: basePolicy, roots } = fixturePolicy();
@@ -176,6 +209,25 @@ describe('Community Vault private whole-position transfer', () => {
     const priceMutation = structuredClone(fixture.plan);
     priceMutation.sellerPriceSats = '99999';
     expect(() => assertCommunityVaultPositionTransferPlan(fixture.policy, priceMutation)).toThrow();
+  });
+
+  it('rejects self-consistent serialized funding and change detached from the verified buyer', () => {
+    const fixture = transferFixture();
+    const foreignScript = `0014${'77'.repeat(20)}`;
+
+    const inputMutation = structuredClone(fixture.plan);
+    inputMutation.buyerInputs[0]!.scriptPubKeyHex = foreignScript;
+    inputMutation.spendPlan.inputs[1]!.scriptPubKeyHex = foreignScript;
+    refreshMutablePlanDigests(inputMutation);
+    expect(() => assertCommunityVaultPositionTransferPlan(fixture.policy, inputMutation))
+      .toThrow(/funding does not belong/u);
+
+    const changeMutation = structuredClone(fixture.plan);
+    changeMutation.buyerChange!.scriptPubKeyHex = foreignScript;
+    changeMutation.spendPlan.outputs[2]!.scriptPubKeyHex = foreignScript;
+    refreshMutablePlanDigests(changeMutation);
+    expect(() => assertCommunityVaultPositionTransferPlan(fixture.policy, changeMutation))
+      .toThrow(/change differs from the verified buyer/u);
   });
 
   it('rejects creator transfers, existing-owner buyers, missing holder evidence, and long expiry', () => {

@@ -421,3 +421,11 @@ this one program.
 ## Licence
 
 AGPL-3.0-only, as part of `@drey/core`.
+
+
+The `review` command works before signing, after one signature, and after a
+quorum. Each supplied partial is checked against the plan and its signer role;
+reviewing one signature does not permit finalization without a quorum.
+Terminal control characters in kit metadata and diagnostic output are displayed
+as visible escapes. Ordinary multiline instructions remain readable, and the
+kit's original bytes and policy identity are preserved.

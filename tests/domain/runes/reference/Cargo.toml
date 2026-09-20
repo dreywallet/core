@@ -1,0 +1,11 @@
+[package]
+name = "drey-rune-differential"
+version = "0.1.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+ordinals = { git = "https://github.com/ordinals/ord", rev = "1ad3f64dbc05b75e98665f411dbaa415f586e1c0" }
+# Match the Bitcoin parser in ord 0.27.1's own Cargo.lock exactly.
+bitcoin = "=0.32.8"
+serde_json = "1"

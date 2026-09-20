@@ -118,6 +118,10 @@ export function resolveMarketplaceRequest(input: {
       'More than one pinned template matches this request.');
   }
   const template = candidates[0]!;
+  if (typeof template.stepCount === 'number' && input.context.stepCount !== template.stepCount) {
+    return result('known_template_mismatch', template, marketplaceId, flexible,
+      'The workflow length differs from the pinned template.');
+  }
   const contract = validateMarketplaceContextContract(input.context);
   if (!contract.ok) {
     return result('known_template_mismatch', template, marketplaceId, flexible, contract.reason);

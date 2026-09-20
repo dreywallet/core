@@ -16,6 +16,8 @@
  * the composition root wires the real fetch, clock, and CSPRNG nonce.
  */
 import type { z } from 'zod';
+import { runeBroadcastRequestSchema, type RuneBroadcastRequest } from './domain/runes/broadcast';
+import { runeHistoryRequestSchema, runeHistoryResponseSchema, type RuneHistoryRequest, type RuneHistoryResponse, runeOutputsRequestSchema, runeOutputsResponseSchema, type RuneOutputsRequest, type RuneOutputsResponse } from './domain/runes/evidence';
 import {
   broadcastRequestSchema,
   broadcastResultSchema,
@@ -573,6 +575,27 @@ export class GatewayClient {
     return this.postSigned('/v1/outpoints/classify', req, outpointsClassifyResponseSchema, TRANSIENT_READ_POLICY, signal);
   }
 
+  /** Separate versioned evidence: an older gateway's 404 never means zero. */
+  async fetchRuneOutputs(
+    req: RuneOutputsRequest,
+    signal?: AbortSignal,
+  ): Promise<FetchSignedResult<RuneOutputsResponse>> {
+    return this.postSigned('/v1/runes/outputs', runeOutputsRequestSchema.parse(req), runeOutputsResponseSchema, NO_RETRY_30S, signal);
+  }
+
+  async fetchRuneHistory(req: RuneHistoryRequest, signal?: AbortSignal): Promise<FetchSignedResult<RuneHistoryResponse>> {
+    const request = runeHistoryRequestSchema.safeParse(req);
+    if (!request.success) return { ok: false, reason: 'schema' };
+    const result = await this.postSigned('/v1/runes/history', request.data, runeHistoryResponseSchema, NO_RETRY_30S, signal);
+    if (result.ok && (result.value.requestedScriptHashes.length !== request.data.scriptHashes.length ||
+        result.value.requestedScriptHashes.some((hash) => !request.data.scriptHashes.includes(hash)) ||
+        result.value.reconciliation.length !== request.data.transactions.length ||
+        result.value.reconciliation.some((item) => !request.data.transactions.some((tx) => tx.txid === item.txid && tx.wtxid === item.wtxid)))) {
+      return { ok: false, reason: 'schema' };
+    }
+    return result;
+  }
+
   async fetchFees(signal?: AbortSignal): Promise<FetchSignedResult<FeeQuoteResponse>> {
     return this.getSigned('/v1/fees', feeQuoteResponseSchema, NO_RETRY_30S, signal);
   }
@@ -597,6 +620,18 @@ export class GatewayClient {
     if (result.ok && !validBroadcastBinding(request.data, result.value)) {
       return { ok: false, reason: 'schema' };
     }
+    return result;
+  }
+
+  async broadcastRuneTransaction(
+    req: RuneBroadcastRequest,
+    signal?: AbortSignal,
+  ): Promise<FetchSignedResult<BroadcastResult>> {
+    const request = runeBroadcastRequestSchema.safeParse(req);
+    if (!request.success) return { ok: false, reason: 'schema' };
+    const result = await this.postSigned('/v1/runes/broadcast', request.data,
+      broadcastResultSchema, NO_RETRY_30S, signal);
+    if (result.ok && !validBroadcastBinding(request.data, result.value)) return { ok: false, reason: 'schema' };
     return result;
   }
 

@@ -4,6 +4,7 @@ import {
   buildScanUnits,
   includeIntermediateDiscoveredAccounts,
   removeDescriptorAccountLifecycle,
+  shadowedByStandardKey,
   stopStandardDiscoveryAfter,
   unitKey,
   unitLaneFromKey,
@@ -333,6 +334,14 @@ describe('adaptive account scan planning', () => {
     expect(unitLaneFromKey('mainnet', 'unknown')).toBeNull();
   });
 
+  it('skips only Xverse paths proven identical to standard account zero', () => {
+    const legacy = buildScanUnits('mainnet', true).filter((unit) => unit.source === 'xverse');
+    expect(legacy.map((unit) => unit.legacyEntryId)).toEqual(['xverse-nested-payment']);
+    expect(shadowedByStandardKey('mainnet', 'xverse:xverse-native-payment')).toBe('a0:payment');
+    expect(shadowedByStandardKey('mainnet', 'xverse:xverse-ordinals')).toBe('a0:ordinals');
+    expect(shadowedByStandardKey('mainnet', 'xverse:xverse-nested-payment')).toBeNull();
+  });
+
   it('covers both lanes of a selected twentieth account without polling any sibling account', () => {
     const selected = {
       accountId: `acct_mainnet_${'c'.repeat(64)}`,
@@ -381,7 +390,8 @@ describe('adaptive account scan planning', () => {
     expect(stopped.filter((unit) => unit.source === 'standard').map(unitKey)).toEqual([
       'a0:payment', 'a0:ordinals', 'a1:payment', 'a1:ordinals',
     ]);
-    expect(stopped.filter((unit) => unit.source === 'xverse')).toHaveLength(3);
+    expect(stopped.filter((unit) => unit.source === 'xverse').map((unit) => unit.legacyEntryId))
+      .toEqual(['xverse-nested-payment']);
   });
 
   it('registers intermediate accounts only through newly discovered activity', () => {

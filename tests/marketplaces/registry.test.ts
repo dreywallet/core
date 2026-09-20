@@ -441,3 +441,15 @@ describe('compile-time marketplace registry', () => {
     })).toThrow('ERR_MARKETPLACE_STATE_CHANGED');
   });
 });
+
+
+it.each([1, 2, 4])('rejects a declared %s-step ord.net listing before recognition', (stepCount) => {
+  const request: MarketplaceContext = { ...context, marketplaceId: 'ordnet', step: 2, stepCount,
+    identifiers: { inscriptionId: `${'11'.repeat(32)}i0`, preflightHandle: 'anchor' },
+    economics: { sellerProceedsSats: '20000', payoutAddress: 'unused-before-shape-check' },
+  };
+  const resolution = resolveMarketplaceRequest({ origin: 'https://ord.net', network: 'mainnet',
+    context: request, candidate: inspectMarketplacePsbt(flexiblePsbt()),
+    selectedInputIndexes: [0], method: 'signPsbt' });
+  expect(resolution).toMatchObject({ status: 'known_template_mismatch', reason: expect.stringContaining('workflow length') });
+});

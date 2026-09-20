@@ -9,7 +9,7 @@
 import { Address, OutScript } from '@scure/btc-signer';
 import { bitcoinNetwork, type Network } from '../keys/derivation';
 import { bytesToHex, hexToBytes } from '../vault/encoding';
-import type { WalletUtxo } from './types';
+import { isRecoveryOnlyUtxo, type WalletUtxo } from './types';
 
 export type ExternalAddressMode = 'stable';
 export type OwnedAddressRole = 'primary' | 'recovered' | 'change';
@@ -28,9 +28,10 @@ export interface RecoveredAddressCount {
 }
 
 export function ownedAddressRole(
-  utxo: Pick<WalletUtxo, 'chain' | 'addressIndex'>,
+  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'chain' | 'addressIndex' | 'recoveryOnly'>,
   externalMode: ExternalAddressMode,
 ): OwnedAddressRole {
+  if (isRecoveryOnlyUtxo(utxo)) return 'recovered';
   if (utxo.chain === 1) return 'change';
   if (utxo.addressIndex === 0) return 'primary';
   switch (externalMode) {
@@ -45,7 +46,7 @@ export function ownedAddressRole(
  * scanner proved; an unsupported or inconsistent script is not displayable.
  */
 export function ownedAddressFromUtxo(
-  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'lane' | 'chain' | 'addressIndex'>,
+  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'lane' | 'chain' | 'addressIndex' | 'recoveryOnly'>,
   network: Network,
   externalMode: ExternalAddressMode = 'stable',
 ): OwnedAddress {
@@ -72,7 +73,7 @@ export function createOwnedAddressResolver(
   network: Network,
   externalMode: ExternalAddressMode = 'stable',
 ): (
-  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'lane' | 'chain' | 'addressIndex'>,
+  utxo: Pick<WalletUtxo, 'scriptPubKey' | 'lane' | 'chain' | 'addressIndex' | 'recoveryOnly'>,
 ) => OwnedAddress {
   const byScript = new Map<string, OwnedAddress>();
   return (utxo) => {

@@ -381,6 +381,7 @@ describe('op registry', () => {
     const row = {
       txid: 'a'.repeat(64), vout: 0, valueSats: '546', effectiveValueSats: '500',
       accountId: ACCOUNT_ID, account: 0, lane: 'payment', path: "m/84'/0'/0'/0/0",
+      address: 'tb1qexample', addressRole: 'primary',
       classification: 'inscribed', eligible: false, reasons: ['not_cardinal_clean'],
       frozen: false, dustQuarantined: false, wrongLane: 'protected_wrong_address',
       inscriptions: [{

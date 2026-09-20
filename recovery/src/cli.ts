@@ -33,7 +33,7 @@ import {
   verifyRecoveryCWords,
   type RecoveryCInteractiveIo,
 } from './recovery-c';
-import { constructVaultPsbt } from '../../src/domain/vault/multisig-psbt';
+import { constructVaultPsbt, validateVaultPartialSignatureResult } from '../../src/domain/vault/multisig-psbt';
 import {
   VAULT_ROLES,
   type VaultPartialSignatureResultV1,
@@ -80,7 +80,14 @@ function parseArgs(argv: readonly string[]): Args {
   return { _: positional, flags };
 }
 
-const out = (line = ''): void => { process.stdout.write(`${line}\n`) };
+/** Keep readable LF/tab formatting; make terminal commands and bidi controls inert. */
+export function terminalText(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+const out = (line = ''): void => { process.stdout.write(`${terminalText(line)}\n`) };
 
 function required(args: Args, name: string): string {
   const value = args.flags.get(name);
@@ -413,9 +420,13 @@ async function cmdPlan(args: Args): Promise<void> {
 function cmdReview(args: Args): void {
   const session = loadSession(required(args, 'session'));
   const { identity } = verifyKitHex(session.kitHex);
-  const psbt = session.partials.length > 0
-    ? combineResults(identity, session.plan, session.partials).psbtHex
-    : session.unsignedPsbtHex;
+  const psbt = session.partials.length === 1
+    ? validateVaultPartialSignatureResult({
+        policy: identity, plan: session.plan, result: session.partials[0]!,
+      }).psbtHex
+    : session.partials.length > 1
+      ? combineResults(identity, session.plan, session.partials).psbtHex
+      : session.unsignedPsbtHex;
   out(renderReview(identity, session.plan, psbt));
 }
 
@@ -557,7 +568,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
     return 0;
   } catch (error) {
-    process.stderr.write(`\n${error instanceof Error ? error.message : String(error)}\n\n`);
+    process.stderr.write(`\n${terminalText(error instanceof Error ? error.message : String(error))}\n\n`);
     return 1;
   }
 }

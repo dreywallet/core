@@ -66,6 +66,19 @@ function scriptForAddress(address: string): string {
   return bytesToHex(OutScript.encode(Address(NETWORK).decode(address)));
 }
 
+function assertBuyerFundingIdentity(input: {
+  buyer: CommunityVaultPositionTransferBuyerV1;
+  buyerInputs: readonly { scriptPubKeyHex: string }[];
+  buyerChange: { scriptPubKeyHex: string } | null;
+}): void {
+  if (input.buyerInputs.some((item) => item.scriptPubKeyHex !== input.buyer.payoutScriptPubKeyHex)) {
+    throw new Error('Community Vault buyer funding does not belong to the verified buyer payout address');
+  }
+  if (input.buyerChange && input.buyerChange.scriptPubKeyHex !== input.buyer.payoutScriptPubKeyHex) {
+    throw new Error('Community Vault buyer change differs from the verified buyer or is dust');
+  }
+}
+
 function cloneOwner(owner: CommunityVaultOwnerInputV1): CommunityVaultOwnerInputV1 {
   return { ...owner, campaignRoot: { ...owner.campaignRoot }, units: [...owner.units] };
 }
@@ -231,9 +244,7 @@ export function createCommunityVaultPositionTransferPlan(
   }
 
   draft.buyerInputs.forEach(assertCommunityVaultBuyerInput);
-  if (draft.buyerInputs.some((item) => item.scriptPubKeyHex !== draft.buyer.payoutScriptPubKeyHex)) {
-    throw new Error('Community Vault buyer funding does not belong to the verified buyer payout address');
-  }
+  assertBuyerFundingIdentity(draft);
   const outpoints = new Set([`${draft.vaultOutpoint.txid}:${draft.vaultOutpoint.vout}`]);
   for (const item of draft.buyerInputs) {
     const outpoint = `${item.txid}:${item.vout}`;
@@ -252,8 +263,7 @@ export function createCommunityVaultPositionTransferPlan(
   }
   const buyerInputTotal = draft.buyerInputs.reduce((sum, input) => sum + BigInt(input.valueSats), 0n);
   const change = draft.buyerChange ? BigInt(draft.buyerChange.valueSats) : 0n;
-  if (draft.buyerChange && (draft.buyerChange.scriptPubKeyHex !== draft.buyer.payoutScriptPubKeyHex ||
-      change < scriptDustSats(draft.buyerChange.scriptPubKeyHex))) {
+  if (draft.buyerChange && change < scriptDustSats(draft.buyerChange.scriptPubKeyHex)) {
     throw new Error('Community Vault buyer change differs from the verified buyer or is dust');
   }
   if (buyerInputTotal - change !== price + fee) {
@@ -364,6 +374,7 @@ export function assertCommunityVaultPositionTransferPlan(
       throw new Error('Community Vault position transfer buyer input differs');
     }
   });
+  assertBuyerFundingIdentity(plan);
   if (plan.buyerChange) {
     const output = plan.spendPlan.outputs[plan.buyerChange.outputIndex];
     if (!output || output.valueSats !== plan.buyerChange.valueSats ||

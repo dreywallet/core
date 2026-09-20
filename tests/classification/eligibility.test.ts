@@ -77,6 +77,34 @@ describe('§11.2 eligibility predicate — per-condition examples', () => {
     }
   });
 
+  it('treats canonical P2SH-P2WPKH as recovery-only even with clean facts', () => {
+    const nested = cleanUtxo({ scriptPubKey: `a914${'2'.repeat(40)}87` });
+    const noUnsupportedEstimate = {
+      ...FRESH_CONTEXT,
+      marginalFeeSatsFor: () => { throw new Error('unsupported script estimate'); },
+    };
+    expect(evaluateEligibility(nested, noUnsupportedEstimate)).toEqual({
+      eligible: false,
+      reasons: ['recovery_only'],
+    });
+    // Script support is an eligibility concern, not an asset classification:
+    // the UI should still describe the coin's verified contents accurately.
+    expect(displayClass(nested)).toBe('cardinal_clean');
+  });
+
+  it('cannot be bypassed by mutating or omitting the recovery-only marker', () => {
+    const nested = cleanUtxo({
+      scriptPubKey: `a914${'3'.repeat(40)}87`,
+      recoveryOnly: false,
+    });
+    expect(evaluateEligibility(nested, FRESH_CONTEXT).reasons).toEqual(['recovery_only']);
+    const markedNative = cleanUtxo({
+      recoveryOnly: true,
+      scriptPubKey: `0014${'4'.repeat(40)}`,
+    });
+    expect(evaluateEligibility(markedNative, FRESH_CONTEXT).reasons).toEqual(['recovery_only']);
+  });
+
   it('condition 2: status staleness or a superseded UTXO revision blocks', () => {
     const staleStatus = {
       ...FRESH_CONTEXT,

@@ -35,6 +35,38 @@ const binding = {
   requestNonce: '123e4567-e89b-42d3-a456-426614174001', providerMethod: 'signPsbt' as const,
 };
 
+it.each([SigHash.DEFAULT, SigHash.ALL])('finalizes a Taproot key-path transaction at sighash %s within its size bound', (sighash) => {
+  const root = deriveAccountNode(seed, 'ordinals', 'signet', 0);
+  const wallet = deriveAddress(root, 'ordinals', 'signet', 0, 0);
+  const destination = deriveAddress(root, 'ordinals', 'signet', 0, 1);
+  root.wipePrivateData();
+  const script = scriptPubKeyHex(wallet.publicKeyHex, 'ordinals', 'signet');
+  const tx = new Transaction({ lowR: true });
+  tx.addInput({ txid: 'aa'.repeat(32), index: 0, sighashType: sighash,
+    witnessUtxo: { script: hexToBytes(script), amount: 50_000n },
+    tapInternalKey: hexToBytes(wallet.publicKeyHex.slice(2)),
+  });
+  tx.addOutput({ script: hexToBytes(scriptPubKeyHex(destination.publicKeyHex, 'ordinals', 'signet')), amount: 49_000n });
+  const plan = createProviderPsbtPlan({
+    accountId, account: 0, network: 'signet', vaultId: 'vault', sessionId: 'session',
+    binding, source, psbtBase64: bytesToBase64(tx.toPSBT()), broadcast: true,
+    planId: 'taproot-size', now: 1_800_000_000_000,
+    classifications: [{ txid: 'aa'.repeat(32), vout: 0, valueSats: '50000', scriptPubKey: script,
+      confirmations: 10, primaryClass: 'cardinal_clean', inscriptions: [], satRanges: null,
+      unsupportedAssetDetected: false, confidence: 'authoritative', classifiedTip: source.coreTip,
+      classificationRevision: source.classificationRevision }],
+    walletInputs: [{ outpoint: `${'aa'.repeat(32)}:0`, derivation: {
+      accountId, account: 0, lane: 'ordinals', chain: 0, index: 0,
+      path: wallet.path, publicKeyHex: wallet.publicKeyHex,
+    } }],
+  });
+  const signed = signProviderPsbtPlan({ plan, seed, random: (length) => new Uint8Array(length).fill(7) });
+  const finalized = Transaction.fromRaw(hexToBytes(signed.transactionHex!));
+  expect(plan.vsize).toBe(BigInt(finalized.vsize));
+  expect(finalized.getInput(0).finalScriptWitness?.[0]?.length).toBe(sighash === 0 ? 64 : 65);
+  expect(plan.vsize).toBe(sighash === 0 ? 111n : 112n);
+});
+
 it('rejects a provider PSBT with too many inputs before outpoint analysis', () => {
   const tx = new Transaction({ lowR: true });
   const script = Uint8Array.from([0x00, 0x14, ...new Uint8Array(20)]);

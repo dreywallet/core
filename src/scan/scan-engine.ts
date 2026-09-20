@@ -50,7 +50,27 @@ export interface ScanUnitOptions {
   maxIndexPerChain: number;
   /** Burned change-index count for wallet-created-change detection (§11.2 c5). */
   burnedChangeCount: number;
+  /**
+   * Exact local evidence for outputs made by a wallet plan. This is deliberately
+   * a bounded, read-only claim: it can promote only an unconfirmed payment
+   * change output whose bytes match the observed UTXO exactly. Asset change is
+   * represented here so it can never be promoted by omission or coercion.
+   */
+  localChangeClaims?: readonly LocalChangeClaim[] | undefined;
 }
+
+export type LocalChangeClaimRole = 'payment_change' | 'ordinal_change' | 'rune_change';
+
+export interface LocalChangeClaim {
+  txid: string;
+  vout: number;
+  valueSats: bigint;
+  scriptPubKey: string;
+  role: LocalChangeClaimRole;
+}
+
+/** Keep a malformed or unexpectedly large local journal from widening scan work. */
+export const MAX_LOCAL_CHANGE_CLAIMS = 128;
 
 export type ScanUnitFailure =
   | 'cancelled'
@@ -92,6 +112,48 @@ function emptyResult(failure?: ScanUnitFailure): ScanUnitResult {
     historyCoverage: { status: 'complete', limitedScriptHashes: [] },
     revision: null,
     boundaryPrompt: false,
+  };
+}
+
+function localChangeClaimKey(claim: Pick<LocalChangeClaim, 'txid' | 'vout'>): string {
+  return `${claim.txid}:${claim.vout}`;
+}
+
+/**
+ * Claims are local journal evidence, not a second source of UTXO facts. Keep
+ * them bounded and unambiguous before any gateway data is considered.
+ */
+function indexLocalChangeClaims(
+  claims: readonly LocalChangeClaim[] | undefined,
+): Map<string, LocalChangeClaim> | null {
+  if (claims === undefined) return new Map();
+  if (claims.length > MAX_LOCAL_CHANGE_CLAIMS) return null;
+  const indexed = new Map<string, LocalChangeClaim>();
+  for (const claim of claims) {
+    if (!Number.isSafeInteger(claim.vout) || claim.vout < 0 || claim.valueSats < 0n ||
+        claim.txid.length === 0 || claim.scriptPubKey.length === 0) return null;
+    const key = localChangeClaimKey(claim);
+    if (indexed.has(key)) return null;
+    indexed.set(key, claim);
+  }
+  return indexed;
+}
+
+function paymentChangeFacts(record: UtxoClassification): AssetFacts {
+  // The local plan proves this exact output was allocated as payment change;
+  // it does not alter confirmed gateway facts because this helper is called
+  // only for an unconfirmed output below.
+  return {
+    primaryClass: 'cardinal_clean',
+    inscriptions: [],
+    satRanges: null,
+    unsupportedAssetDetected: false,
+    detectedAssets: [],
+    detectedAssetCount: 0,
+    assetIdentityComplete: true,
+    confidence: 'authoritative',
+    classifiedTip: record.classifiedTip,
+    classificationRevision: record.classificationRevision,
   };
 }
 
@@ -185,6 +247,9 @@ async function scanUnitOnce(
   options: ScanUnitOptions,
 ): Promise<ScanUnitResult | 'revision_skew'> {
   const cap = options.maxIndexPerChain;
+  const hasLocalChangeEvidence = options.localChangeClaims !== undefined;
+  const localChangeClaims = indexLocalChangeClaims(options.localChangeClaims);
+  if (localChangeClaims === null) return emptyResult('conflicting_sources');
   const windows: Record<0 | 1, WindowState> = {
     0: { to: 0, highestActive: null },
     1: { to: 0, highestActive: null },
@@ -206,7 +271,18 @@ async function scanUnitOnce(
     indexTip: { height: number; hash: string };
   } | null = null;
 
-  let nextTargets: Record<0 | 1, number> = { 0: Math.min(GAP_LIMIT, cap), 1: Math.min(GAP_LIMIT, cap) };
+  // Change indexes are burned when a transaction reserves them, including
+  // attempts that are later cancelled.  A normal gap scan must therefore
+  // cover the whole locally-known burned prefix on chain 1; otherwise a
+  // later wallet-created change output can sit beyond the first 20 empty
+  // addresses and never be rediscovered.  The pass cap remains authoritative
+  // (an Extended scan can raise it), while the ordinary gap is retained when
+  // no change index has been burned.
+  const changeTarget = Math.max(GAP_LIMIT, options.burnedChangeCount);
+  let nextTargets: Record<0 | 1, number> = {
+    0: Math.min(GAP_LIMIT, cap),
+    1: Math.min(changeTarget, cap),
+  };
 
   while (nextTargets[0] > windows[0].to || nextTargets[1] > windows[1].to) {
     if (ports.shouldCancel()) return emptyResult('cancelled');
@@ -394,7 +470,30 @@ async function scanUnitOnce(
     ) {
       return 'revision_skew';
     }
-    const facts: AssetFacts = {
+    const localClaim = localChangeClaims.get(key);
+    if (localClaim !== undefined &&
+        (localClaim.valueSats !== BigInt(wire.valueSats) || localClaim.scriptPubKey !== wire.scriptPubKey)) {
+      // A plan claim and the signed gateway UTXO disagree about the exact
+      // output. Never choose one source and continue with spendable state.
+      return emptyResult('conflicting_sources');
+    }
+    const walletCreatedChange =
+      wire.fundingSpendsOnlyRequested && chain === 1 && index < options.burnedChangeCount;
+    const localPaymentChange = wire.height === null && walletCreatedChange &&
+      localClaim?.role === 'payment_change' &&
+      // The local claim may repair production's deliberately degraded
+      // mempool classification, but it must not erase any gateway asset
+      // evidence (including an incomplete/unsupported-asset indication).
+      record.primaryClass === 'unknown' &&
+      record.confidence === 'degraded' &&
+      record.inscriptions.length === 0 &&
+      !record.unsupportedAssetDetected &&
+      (record.detectedAssets?.length ?? 0) === 0 &&
+      (record.detectedAssetCount ?? 0) === 0 &&
+      record.satRanges?.some(
+        (range) => range.rarity !== undefined && range.rarity !== 'common',
+      ) !== true;
+    const gatewayFacts: AssetFacts = {
       primaryClass: record.primaryClass,
       inscriptions: record.inscriptions,
       satRanges: record.satRanges,
@@ -406,8 +505,17 @@ async function scanUnitOnce(
       classifiedTip: record.classifiedTip,
       classificationRevision: record.classificationRevision,
     };
-    const walletCreatedChange =
-      wire.fundingSpendsOnlyRequested && chain === 1 && index < options.burnedChangeCount;
+    // A gateway must not make an unconfirmed output spendable merely by
+    // calling it authoritative once a caller opts into local change evidence.
+    // Callers with a separate exact-plan recognizer (the Vault coordinator)
+    // retain the legacy result and apply their own proof after this scan.
+    const facts: AssetFacts = localPaymentChange
+      ? paymentChangeFacts(record)
+      : hasLocalChangeEvidence && wire.height === null &&
+          gatewayFacts.primaryClass === 'cardinal_clean' &&
+          gatewayFacts.confidence === 'authoritative'
+        ? { ...gatewayFacts, primaryClass: 'unknown', confidence: 'degraded' }
+        : gatewayFacts;
     const utxo: WalletUtxo = {
       outpoint: { txid: wire.txid, vout: wire.vout },
       valueSats: BigInt(wire.valueSats),
@@ -419,6 +527,14 @@ async function scanUnitOnce(
       addressIndex: index,
       height: wire.height,
       walletCreatedChange,
+      // Only the distinct m/49' nested-SegWit entry is recovery-only. The
+      // native m/84' and Taproot m/86' Xverse units are byte-identical to the
+      // standard account-0 units and are skipped by buildScanUnits; keeping
+      // this predicate explicit prevents a future legacy entry from being
+      // marked merely because its source is Xverse.
+      ...(unit.source === 'xverse' && unit.legacyEntryId === 'xverse-nested-payment'
+        ? { recoveryOnly: true }
+        : {}),
       facts,
       flags: { userFrozen: false, dustQuarantined: false },
     };

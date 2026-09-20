@@ -85,17 +85,22 @@ export function buildPublicAccountScanUnits(
 export function shadowedByStandardKey(network: Network, key: string): string | null {
   for (const entry of xverseManifest(network).entries) {
     if (key !== `xverse:${entry.id}`) continue;
-    if (entry.purpose === 84 && entry.lane === 'payment') return 'a0:payment';
-    if (entry.purpose === 86 && entry.lane === 'ordinals') return 'a0:ordinals';
+    if (entry.purpose === 84 && entry.addressType === 'p2wpkh' &&
+        entry.lane === 'payment' &&
+        entry.accountMapping === 'address-index-at-account-0') return 'a0:payment';
+    if (entry.purpose === 86 && entry.addressType === 'p2tr' &&
+        entry.lane === 'ordinals' &&
+        entry.accountMapping === 'address-index-at-account-0') return 'a0:ordinals';
   }
   return null;
 }
 
 /**
  * Explicit/known accounts plus one bounded sequential recovery batch, followed
- * by pinned Xverse legacy entries. Re-running discovery continues after the
- * highest contiguous known account, while the service still stops each pass
- * after the first completely unused account.
+ * by the pinned Xverse legacy entries that are not byte-identical to standard
+ * account zero. Re-running discovery continues after the highest contiguous
+ * known account, while the service still stops each pass after the first
+ * completely unused account.
  */
 export function buildScanUnits(
   network: Network,
@@ -125,6 +130,10 @@ export function buildScanUnits(
   }
   if (includeLegacy) {
     for (const entry of xverseManifest(network).entries) {
+      // These two entries are byte-identical to the standard account-0 lanes;
+      // retain their old cache keys for read compatibility, but do not issue
+      // a second gateway scan. The nested P2SH-P2WPKH entry remains distinct.
+      if (shadowedByStandardKey(network, `xverse:${entry.id}`) !== null) continue;
       units.push({ source: 'xverse', account: 0, lane: entry.lane, legacyEntryId: entry.id });
     }
   }

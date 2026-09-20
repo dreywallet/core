@@ -52,7 +52,7 @@ function bindUnavailable(plan: ProviderPsbtPlanV3): ProviderPsbtPlanV3 {
 }
 
 describe('recognized marketplace signing', () => {
-  it('signs an exact Satflow SINGLE|ANYONECANPAY seller commitment without weakening generic policy', () => {
+  it.each([undefined, 1_800_000_001_000, 1_800_000_900_000])('signs a seller commitment with optional expiry %s without changing approvals', (expiresAt) => {
     const seed = mnemonicToSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
     const account = deriveAccountNode(seed, 'payment', 'mainnet', 0);
     const seller = deriveAddress(account, 'payment', 'mainnet', 0, 0);
@@ -79,7 +79,7 @@ describe('recognized marketplace signing', () => {
       satRanges: null, unsupportedAssetDetected: false, confidence: 'authoritative',
       classifiedTip: source.coreTip, classificationRevision: source.classificationRevision,
     };
-    const plan = bindUnavailable(createProviderPsbtPlan({
+    const request: Parameters<typeof createProviderPsbtPlan>[0] = {
       psbtBase64: bytesToBase64(tx.toPSBT()),
       binding: {
         origin: 'https://satflow.com', tabId: 1, frameId: 0,
@@ -99,6 +99,7 @@ describe('recognized marketplace signing', () => {
         context: {
           version: 1, marketplaceId: 'satflow', templateVersion: 'drey-1', action: 'list',
           role: 'seller', assetKind: 'inscription', workflowId: 'wf-1', step: 1, stepCount: 2,
+          ...(expiresAt === undefined ? {} : { expiresAt }),
           identifiers: { inscriptionId: `${'11'.repeat(32)}i0` },
           economics: { sellerProceedsSats: '20000', payoutAddress: payout.address }, broadcaster: 'site',
         },
@@ -108,7 +109,15 @@ describe('recognized marketplace signing', () => {
         },
         selectedInputIndexes: [0],
       },
-    }));
+    };
+    for (const invalidExpiry of [1_800_000_000_000, 1_799_999_999_999, NaN, Infinity]) {
+      expect(() => createProviderPsbtPlan({ ...request, marketplace: {
+        ...request.marketplace!, context: { ...request.marketplace!.context, expiresAt: invalidExpiry },
+      } })).toThrow(/expir/u);
+    }
+    const plan = bindUnavailable(createProviderPsbtPlan(request));
+
+    expect(plan.expiresAt).toBe(Math.min(1_800_000_300_000, expiresAt ?? Number.MAX_SAFE_INTEGER));
     expect(plan.kind).toBe('marketplace_psbt');
     expect(plan.requiresAdvanced).toBe(false);
     expect(plan.analysis.hardViolations).toEqual([]);

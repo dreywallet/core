@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import { detectedAssetSchema, isAuthoritativeCardinalClean, voutSchema } from '../gateway/contract';
 import { inscriptionMetadataSchema, inscriptionPreviewDescriptorSchema } from '../gateway/contract';
-import type { AssetFacts, WalletUtxo } from '../classification/types';
+import { isRecoveryOnlyUtxo, type AssetFacts, type WalletUtxo } from '../classification/types';
 import type { Network, AddressKind } from '../keys/derivation';
 import type { StoredInscriptionPreviewSet } from './inscription-previews';
 import { formatFeeRateSatPerVb, parseCustomFeeRate } from './fees';
@@ -371,6 +371,7 @@ export function inputFromUtxo(
   sequence: number,
 ): PlanInput {
   if (!utxo.facts) throw new Error('missing input classification');
+  if (isRecoveryOnlyUtxo(utxo)) throw new Error('recovery-only UTXO cannot be planned');
   if (!utxo.accountId || derivation.accountId !== utxo.accountId) {
     throw new Error('input public account identity mismatch');
   }

@@ -66,6 +66,15 @@ describe('owned-address presentation metadata', () => {
     expect(ownedAddressRole(utxo({ chain: 0, addressIndex: 0 }), 'stable')).toBe('primary');
     expect(ownedAddressRole(utxo({ chain: 0, addressIndex: 1 }), 'stable')).toBe('recovered');
     expect(ownedAddressRole(utxo({ chain: 1, addressIndex: 18 }), 'stable')).toBe('change');
+    expect(ownedAddressRole(utxo({
+      chain: 0, addressIndex: 0, recoveryOnly: true,
+    }), 'stable')).toBe('recovered');
+    expect(ownedAddressRole(utxo({
+      chain: 0,
+      addressIndex: 0,
+      scriptPubKey: `a914${'2'.repeat(40)}87`,
+      recoveryOnly: undefined,
+    }), 'stable')).toBe('recovered');
   });
 
   it('round-trips native SegWit and Taproot scripts on mainnet and signet', () => {
@@ -129,10 +138,11 @@ describe('owned-address presentation metadata', () => {
     );
     expect(entry).toBeDefined();
     const node = HDKey.fromMasterSeed(seed).derive(legacyAccountPath(entry!, 'signet'));
-    const legacy = deriveLegacyAddress(node, entry!, 'signet', 0, 1);
+    const legacy = deriveLegacyAddress(node, entry!, 'signet', 0, 0);
     expect(ownedAddressFromUtxo(utxo({
       scriptPubKey: legacy.scriptPubKeyHex,
-      addressIndex: 1,
+      addressIndex: 0,
+      recoveryOnly: true,
     }), 'signet')).toEqual({
       address: legacy.address,
       lane: 'payment',

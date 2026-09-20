@@ -72,6 +72,35 @@ describe('balance summary (§10.2)', () => {
     });
   });
 
+  it('counts a proven wallet-created payment change as available before confirmation', () => {
+    const change: WalletUtxo = {
+      outpoint: { txid: 'c'.repeat(64), vout: 1 },
+      valueSats: 10_000n,
+      scriptPubKey: `0014${'2'.repeat(40)}`,
+      account: 0,
+      lane: 'payment',
+      chain: 1,
+      addressIndex: 2,
+      height: null,
+      walletCreatedChange: true,
+      facts: {
+        primaryClass: 'cardinal_clean',
+        inscriptions: [],
+        satRanges: null,
+        unsupportedAssetDetected: false,
+        confidence: 'authoritative',
+        classifiedTip: { height: 100, hash: 'd'.repeat(64) },
+        classificationRevision: 'rev-0001',
+      },
+      flags: { userFrozen: false, dustQuarantined: false },
+    };
+    expect(summarizeBalances([change], FRESH_CONTEXT)).toMatchObject({
+      availableSats: 10_000n,
+      pendingSats: 0n,
+      protectedSats: 0n,
+    });
+  });
+
   it('separates a signed pending inscription hint without counting it as gallery inventory', () => {
     const pending: WalletUtxo = {
       outpoint: { txid: 'a'.repeat(64), vout: 0 },

@@ -25,6 +25,15 @@ function codeOf(run: () => unknown): string | undefined {
 }
 
 describe('public account interchange', () => {
+  it.each([
+    [0x9a, 0xff, 0xff, 0xff, 0xff],
+    [0x99, 0x02, 0x00],
+    [0x82, 0x99, 0x01, 0xff],
+  ])('rejects impossible declared array budgets before allocation: %j', (...bytes) => {
+    expect(codeOf(() => decodeAccountDescriptor(Uint8Array.from(bytes), 'account-descriptor', 'signet')))
+      .toBe('limit-exceeded');
+  });
+
   it.each(['mainnet', 'signet'] as const)('round-trips current account-descriptor dCBOR on %s', (network) => {
     const definition = publicAccountFromSeed(SEED, network, 7);
     const encoded = encodeAccountDescriptor(definition);

@@ -49,6 +49,15 @@ export function scriptHashFromScriptPubKey(scriptPubKeyHexValue: string): string
   return bytesToHex(getCryptoProvider().sha256(hexToBytes(scriptPubKeyHexValue)));
 }
 
+/**
+ * P2SH inputs are recovery-only until the wallet has a dedicated nested
+ * SegWit planner/signer. Recognize the canonical script shape rather than
+ * trusting a caller-provided legacy label.
+ */
+export function isP2shScriptPubKey(scriptPubKeyHexValue: string): boolean {
+  return /^a914[0-9a-f]{40}87$/u.test(scriptPubKeyHexValue);
+}
+
 export function scriptHashForPublicKey(
   publicKeyHex: string,
   kind: AddressKind,

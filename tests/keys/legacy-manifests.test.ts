@@ -101,6 +101,7 @@ describe('Xverse legacy-path manifest (§8.2)', () => {
     );
     expect(nested.scriptPubKeyHex.startsWith('a914')).toBe(true); // OP_HASH160 push20
     expect(nested.scriptPubKeyHex.endsWith('87')).toBe(true); // OP_EQUAL
+    expect(nested.scriptPubKeyHex).toMatch(/^a914[0-9a-f]{40}87$/u);
 
     const native = deriveLegacyAddress(
       accountNode('xverse-native-payment', 'mainnet'),

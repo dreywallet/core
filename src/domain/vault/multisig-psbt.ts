@@ -610,23 +610,34 @@ export function combineVaultPsbts(input: {
   return { ...result, roles: roles as CombinedVaultPsbt['roles'] };
 }
 
+/** Verify one partial's envelope and cryptographic role without requiring a quorum. */
+export function validateVaultPartialSignatureResult(input: {
+  policy: VaultPolicyIdentityV1;
+  plan: VaultUnsignedPlanV1;
+  result: VaultPartialSignatureResultV1;
+}) {
+  const { result } = input;
+  const baseHash = vaultPsbtHash(constructVaultPsbt(input.policy, input.plan));
+  serializeVaultPartialSignatureResult(result);
+  if (result.network !== input.plan.network || result.policyId !== input.plan.policyId ||
+      result.planId !== input.plan.planId || result.planDigest !== input.plan.planDigest ||
+      result.priorPsbtHash !== baseHash || result.signedPsbtHash !== vaultPsbtHash(result.signedPsbtHex)) {
+    throw new Error('partial-signature result binding differs from combination plan');
+  }
+  const parsed = validateVaultPsbt(input.policy, input.plan, result.signedPsbtHex);
+  if (parsed.roles.length !== 1 || parsed.roles[0] !== result.roleAdded) {
+    throw new Error('partial-signature result role does not match cryptographic signatures');
+  }
+  return parsed;
+}
+
 export function combineVaultPartialSignatureResults(input: {
   policy: VaultPolicyIdentityV1;
   plan: VaultUnsignedPlanV1;
   results: readonly VaultPartialSignatureResultV1[];
 }): CombinedVaultPsbt {
-  const baseHash = vaultPsbtHash(constructVaultPsbt(input.policy, input.plan));
   for (const result of input.results) {
-    serializeVaultPartialSignatureResult(result);
-    if (result.network !== input.plan.network || result.policyId !== input.plan.policyId ||
-        result.planId !== input.plan.planId || result.planDigest !== input.plan.planDigest ||
-        result.priorPsbtHash !== baseHash || result.signedPsbtHash !== vaultPsbtHash(result.signedPsbtHex)) {
-      throw new Error('partial-signature result binding differs from combination plan');
-    }
-    const parsed = validateVaultPsbt(input.policy, input.plan, result.signedPsbtHex);
-    if (parsed.roles.length !== 1 || parsed.roles[0] !== result.roleAdded) {
-      throw new Error('partial-signature result role does not match cryptographic signatures');
-    }
+    validateVaultPartialSignatureResult({ policy: input.policy, plan: input.plan, result });
   }
   return combineVaultPsbts({ policy: input.policy, plan: input.plan, psbtHexes: input.results.map((item) => item.signedPsbtHex) });
 }

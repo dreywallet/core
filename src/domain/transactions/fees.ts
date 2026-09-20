@@ -161,12 +161,23 @@ function witnessBytes(scriptPubKey: string): bigint {
   return scriptKind(scriptPubKey) === 'p2wpkh' ? 108n : 66n;
 }
 
+/** Serialized witness stack, including compact lengths (but not marker/flag). */
+export function witnessStackBytes(itemLengths: readonly number[]): bigint {
+  return compactSizeBytes(itemLengths.length) + itemLengths.reduce((total, length) =>
+    total + compactSizeBytes(length) + BigInt(length), 0n);
+}
+
 export function estimateVsize(
   inputScripts: readonly string[],
   outputScripts: readonly string[],
+  inputWitnessBytes?: readonly bigint[],
 ): bigint {
   if (inputScripts.length === 0 || outputScripts.length === 0) {
     throw new RangeError('transaction requires inputs and outputs');
+  }
+  if (inputWitnessBytes && (inputWitnessBytes.length !== inputScripts.length ||
+      inputWitnessBytes.some((bytes) => bytes <= 0n))) {
+    throw new RangeError('invalid input witness sizes');
   }
   const strippedBytes =
     8n + // version + locktime
@@ -177,7 +188,8 @@ export function estimateVsize(
       const scriptBytes = BigInt((script.length / 2));
       return sum + 8n + compactSizeBytes(Number(scriptBytes)) + scriptBytes;
     }, 0n);
-  const witnessWeight = 2n + inputScripts.reduce((sum, script) => sum + witnessBytes(script), 0n);
+  const witnessWeight = 2n + inputScripts.reduce((sum, script, index) =>
+    sum + (inputWitnessBytes?.[index] ?? witnessBytes(script)), 0n);
   const weight = strippedBytes * 4n + witnessWeight;
   return (weight + 3n) / 4n;
 }

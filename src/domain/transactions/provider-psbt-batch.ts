@@ -226,19 +226,34 @@ export function assertProviderPsbtBatchPlan(plan: ProviderPsbtBatchPlanV1): void
 export async function signProviderPsbtBatchPlan(input: {
   plan: ProviderPsbtBatchPlanV1;
   seed: Uint8Array;
-  now: number;
+  now: () => number;
   random: (length: number) => Uint8Array;
   guard?: () => void;
   /** Lets the host process queued lock, disconnect, and approval-cancellation events. */
   yieldControl: () => Promise<void>;
 }): Promise<Array<{ psbtBase64: string }>> {
   assertProviderPsbtBatchPlan(input.plan);
-  if (input.now >= input.plan.expiresAt) throw new Error('provider batch plan expired');
+  const approvedHash = input.plan.batchHash;
+  const items = input.plan.items.map((item) => ({
+    plan: item.plan,
+    planHash: item.plan.planHash,
+    requestedInputIndexes: [...item.requestedInputIndexes],
+  }));
+  const expiresAt = input.plan.expiresAt;
+  const assertActive = (): void => {
+    const now = input.now();
+    if (!Number.isSafeInteger(now) || now < 0 || now >= expiresAt) {
+      throw new Error('provider batch plan expired');
+    }
+  };
+  assertActive();
   // No result escapes until every independent item has passed the same signer.
   const results: Array<{ psbtBase64: string }> = [];
-  for (const item of input.plan.items) {
+  for (const item of items) {
     await input.yieldControl();
     input.guard?.();
+    assertActive();
+    if (item.plan.planHash !== item.planHash) throw new Error('provider batch item changed');
     const signed = signProviderPsbtPlan({
       plan: item.plan,
       seed: input.seed,
@@ -249,5 +264,11 @@ export async function signProviderPsbtBatchPlan(input: {
   }
   await input.yieldControl();
   input.guard?.();
+  assertActive();
+  assertProviderPsbtBatchPlan(input.plan);
+  if (input.plan.batchHash !== approvedHash || results.length !== items.length) {
+    throw new Error('provider batch signing did not complete atomically');
+  }
+  assertActive();
   return results;
 }

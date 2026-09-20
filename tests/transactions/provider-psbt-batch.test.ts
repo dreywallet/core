@@ -131,7 +131,7 @@ describe('independent provider PSBT batches', () => {
     const signed = await signProviderPsbtBatchPlan({
       plan: batch,
       seed,
-      now: NOW + 1,
+      now: () => NOW + 1,
       random: (length) => new Uint8Array(length).fill(7),
       yieldControl: async () => undefined,
     });
@@ -145,6 +145,64 @@ describe('independent provider PSBT batches', () => {
     expect(signed[0]!.psbtBase64).not.toBe(signed[1]!.psbtBase64);
   });
 
+  it('never signs a substituted plan even if the original item is restored before release', async () => {
+    const batch = create();
+    const original = batch.items[0]!.plan;
+    const replacement = plan({ txid: '77'.repeat(32), planId: 'unapproved' });
+    const expected = signProviderPsbtPlan({ plan: original, seed,
+      random: (length) => new Uint8Array(length) }).psbtBase64;
+    let yields = 0;
+    const results = await signProviderPsbtBatchPlan({
+      plan: batch, seed, now: () => NOW + 1,
+      random: (length) => new Uint8Array(length),
+      yieldControl: async () => {
+        if (++yields === 1) batch.items[0]!.plan = replacement;
+        if (yields === 3) batch.items[0]!.plan = original;
+      },
+    });
+    expect(results[0]!.psbtBase64).toBe(expected);
+  });
+
+  it('rejects mutation of a captured plan even when its hashes are recomputed', async () => {
+    const batch = create();
+    const replacement = plan({ txid: '78'.repeat(32), planId: 'unapproved' });
+    await expect(signProviderPsbtBatchPlan({
+      plan: batch, seed, now: () => NOW + 1,
+      random: (length) => new Uint8Array(length),
+      yieldControl: async () => { Object.assign(batch.items[0]!.plan, replacement); },
+    })).rejects.toThrow(/item changed/u);
+  });
+
+  it.each([1, 2, 3])('rejects expiry during yield %s', async (atYield) => {
+    const batch = create();
+    let now = NOW + 1;
+    let yields = 0;
+    await expect(signProviderPsbtBatchPlan({
+      plan: batch, seed, now: () => now,
+      random: (length) => new Uint8Array(length),
+      yieldControl: async () => { if (++yields === atYield) now = batch.expiresAt; },
+    })).rejects.toThrow(/expired/u);
+  });
+
+  it.each([NaN, Infinity, -1])('rejects invalid clock %s', async (now) => {
+    await expect(signProviderPsbtBatchPlan({
+      plan: create(), seed, now: () => now,
+      random: (length) => new Uint8Array(length), yieldControl: async () => undefined,
+    })).rejects.toThrow(/expired/u);
+  });
+
+  it.each([1, 3])('rejects item removal during yield %s without releasing a partial batch', async (atYield) => {
+    const batch = create();
+    let yields = 0;
+    await expect(signProviderPsbtBatchPlan({
+      plan: batch, seed, now: () => NOW + 1,
+      random: (length) => new Uint8Array(length),
+      yieldControl: async () => {
+        if (++yields === atYield) batch.items.pop();
+      },
+    })).rejects.toThrow();
+  });
+
   it('signs an independent deterministic regtest-network batch without a network service', async () => {
     const batch = create([
       { plan: plan({ txid: '21'.repeat(32), planId: 'regtest-1', network: 'regtest' }) },
@@ -154,7 +212,7 @@ describe('independent provider PSBT batches', () => {
     const signed = await signProviderPsbtBatchPlan({
       plan: batch,
       seed,
-      now: NOW + 1,
+      now: () => NOW + 1,
       random: (length) => new Uint8Array(length).fill(3),
       yieldControl: async () => undefined,
     });
@@ -241,7 +299,7 @@ describe('independent provider PSBT batches', () => {
     await expect(signProviderPsbtBatchPlan({
       plan: batch,
       seed,
-      now: batch.expiresAt,
+      now: () => batch.expiresAt,
       random: (length) => new Uint8Array(length),
       yieldControl: async () => undefined,
     })).rejects.toThrow(/expired/u);
@@ -251,7 +309,7 @@ describe('independent provider PSBT batches', () => {
       await signProviderPsbtBatchPlan({
         plan: batch,
         seed,
-        now: NOW + 1,
+        now: () => NOW + 1,
         random: (length) => new Uint8Array(length),
         yieldControl: async () => undefined,
         guard: () => {
@@ -276,7 +334,7 @@ describe('independent provider PSBT batches', () => {
       await signProviderPsbtBatchPlan({
         plan: batch,
         seed,
-        now: NOW + 1,
+        now: () => NOW + 1,
         random: (length) => new Uint8Array(length),
         yieldControl: () => new Promise((resolve) => setTimeout(resolve, 0)),
         guard: () => {

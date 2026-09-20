@@ -1,4 +1,5 @@
 import { Transaction } from '@scure/btc-signer';
+import { estimateProviderVsize } from './provider-psbt-size';
 import { scriptPubKeyHex } from '../keys/script-hash';
 import { getCryptoProvider } from '../vault/crypto-provider';
 import {
@@ -703,7 +704,10 @@ function analyzeParsed(
   }
   let vsize: bigint | null = null;
   try {
-    vsize = estimateVsize(context.inputs.map((input) => input.scriptPubKey), outputs.map((output) => output.scriptPubKey));
+    const outputScripts = outputs.map((output) => output.scriptPubKey);
+    vsize = context.providerPolicy
+      ? estimateProviderVsize(tx, context.inputs, outputScripts)
+      : estimateVsize(context.inputs.map((input) => input.scriptPubKey), outputScripts);
   } catch {
     vsize = null;
   }

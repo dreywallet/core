@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   OutpointsClassifyResponse,
   SnapshotHistoryEntry,
+  UtxoClassification,
   WalletScanSnapshotResponse,
 } from '../../src/domain/gateway/contract';
 import { scanUnit, type ScanUnitPorts } from '../../src/scan/scan-engine';
@@ -35,12 +36,20 @@ const hashAt = (chain: 0 | 1, index: number) =>
 const txidAt = (index: number) => `${index.toString(16).padStart(4, '0')}`.padEnd(64, 'f');
 const SCRIPT = '0014' + 'b'.repeat(40);
 
+const changeClaim = (
+  index: number,
+  role: 'payment_change' | 'ordinal_change' | 'rune_change' = 'payment_change',
+  valueSats = 10_000n,
+) => ({ txid: txidAt(index), vout: 0, valueSats, scriptPubKey: SCRIPT, role });
+
 type SnapshotUtxo = WalletScanSnapshotResponse['utxos'][number];
 type ClassifyBody = Pick<OutpointsClassifyResponse, 'classifications' | 'unknownOutpoints'>;
 
 interface FakeOptions {
   /** External-chain indexes that hold a confirmed 10k-sat clean UTXO. */
   activeExt: number[];
+  /** Internal-chain indexes that hold a confirmed 10k-sat clean UTXO. */
+  activeInt?: number[];
   snapshotRevisions?: string[];
   snapshotHeights?: Array<number | null>;
   classifyRevision?: string;
@@ -54,6 +63,12 @@ interface FakeOptions {
   activeEvidenceExt?: number[];
   historyPartial?: boolean;
   includeFundingHistory?: boolean;
+  fundingSpendsOnlyRequested?: boolean;
+  classifyConfirmations?: number;
+  classifyPrimaryClass?: UtxoClassification['primaryClass'];
+  classifyConfidence?: UtxoClassification['confidence'];
+  classifyInscriptions?: UtxoClassification['inscriptions'];
+  classifyUnsupportedAssetDetected?: boolean;
   snapshotFailure?: { reason: 'http'; httpStatus: number };
   mutateClassify?: (body: ClassifyBody) => ClassifyBody;
   historyForSnapshot?: (scriptHashes: string[], call: number) => SnapshotHistoryEntry[];
@@ -63,7 +78,10 @@ function makePorts(options: FakeOptions) {
   const snapshotRequests: string[][] = [];
   const ordinalFlowRequests: Array<boolean | undefined> = [];
   let cancelled = false;
-  const activeByHash = new Map(options.activeExt.map((i) => [hashAt(0, i), i]));
+  const activeByHash = new Map([
+    ...options.activeExt.map((i) => [hashAt(0, i), i] as const),
+    ...(options.activeInt ?? []).map((i) => [hashAt(1, i), i] as const),
+  ]);
   const activeEvidence = new Set((options.activeEvidenceExt ?? []).map((i) => hashAt(0, i)));
   const ports: ScanUnitPorts = {
     network: 'signet',
@@ -102,7 +120,7 @@ function makePorts(options: FakeOptions) {
           scriptHash: h,
           scriptPubKey: SCRIPT,
           height,
-          fundingSpendsOnlyRequested: false,
+          fundingSpendsOnlyRequested: options.fundingSpendsOnlyRequested ?? false,
         }));
       const activeScriptHashes = req.scriptHashes.filter((hash) =>
         activeByHash.has(hash) || activeEvidence.has(hash));
@@ -148,12 +166,12 @@ function makePorts(options: FakeOptions) {
           vout: o.vout,
           valueSats: '10000',
           scriptPubKey: SCRIPT,
-          confirmations: 1_001,
-          primaryClass: 'cardinal_clean' as const,
-          inscriptions: [],
+          confirmations: options.classifyConfirmations ?? 1_001,
+          primaryClass: options.classifyPrimaryClass ?? 'cardinal_clean',
+          inscriptions: options.classifyInscriptions ?? [],
           satRanges: null,
-          unsupportedAssetDetected: false,
-          confidence: 'authoritative' as const,
+          unsupportedAssetDetected: options.classifyUnsupportedAssetDetected ?? false,
+          confidence: options.classifyConfidence ?? 'authoritative',
           classifiedTip: { height: 250_000, hash: 'a'.repeat(64) },
           classificationRevision: options.classifyRevision ?? 'rev-0001',
         })),
@@ -190,6 +208,28 @@ describe('scan engine (§8.2)', () => {
     expect(ordinals.ordinalFlowRequests).toEqual([true]);
   });
 
+  it('marks a discovered Xverse nested-payment output recovery-only', async () => {
+    const { ports } = makePorts({ activeExt: [0] });
+    const result = await scanUnit(
+      { source: 'xverse', account: 0, lane: 'payment', legacyEntryId: 'xverse-nested-payment' },
+      ports,
+      { maxIndexPerChain: 20, burnedChangeCount: 0 },
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(result.utxos[0]?.recoveryOnly).toBe(true);
+  });
+
+  it('does not mark a duplicate native Xverse unit recovery-only', async () => {
+    const { ports } = makePorts({ activeExt: [0] });
+    const result = await scanUnit(
+      { source: 'xverse', account: 0, lane: 'payment', legacyEntryId: 'xverse-native-payment' },
+      ports,
+      { maxIndexPerChain: 20, burnedChangeCount: 0 },
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(result.utxos[0]?.recoveryOnly).toBeUndefined();
+  });
+
   it('stops at the gap limit with no activity', async () => {
     const { ports, snapshotRequests } = makePorts({ activeExt: [] });
     const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 60, burnedChangeCount: 0 });
@@ -198,6 +238,240 @@ describe('scan engine (§8.2)', () => {
     // One round: ext 0..19 + int 0..19.
     expect(snapshotRequests).toHaveLength(1);
     expect(snapshotRequests[0]).toHaveLength(40);
+  });
+
+  it('covers a burned change prefix beyond the normal gap before stopping', async () => {
+    const { ports, snapshotRequests } = makePorts({
+      activeExt: [], activeInt: [24], fundingSpendsOnlyRequested: true,
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 25,
+    });
+    expect(result).toMatchObject({ ok: true, boundaryPrompt: false });
+    expect(result.utxos).toHaveLength(1);
+    expect(result.utxos[0]).toMatchObject({
+      chain: 1,
+      addressIndex: 24,
+      walletCreatedChange: true,
+    });
+    // External chain keeps its normal 0..19 gap; internal chain covers the
+    // locally-known burned prefix 0..24, then widens by one normal gap.
+    expect(snapshotRequests).toEqual([
+      expect.arrayContaining(Array.from({ length: 20 }, (_, i) => hashAt(0, i))),
+      expect.arrayContaining(Array.from({ length: 20 }, (_, i) => hashAt(1, i + 25))),
+    ]);
+    expect(snapshotRequests[0]).toHaveLength(45);
+    expect(snapshotRequests[1]).toHaveLength(20);
+  });
+
+  it('promotes an exact unconfirmed payment-change claim to authoritative clean facts', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+      classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [changeClaim(2)],
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(result.utxos[0]).toMatchObject({
+      chain: 1,
+      addressIndex: 2,
+      height: null,
+      walletCreatedChange: true,
+      facts: {
+        primaryClass: 'cardinal_clean',
+        confidence: 'authoritative',
+        inscriptions: [],
+        unsupportedAssetDetected: false,
+      },
+    });
+  });
+
+  it.each(['ordinal_change', 'rune_change'] as const)(
+    'does not promote %s claims',
+    async (role) => {
+      const { ports } = makePorts({
+        activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+        snapshotHeights: [null], classifyConfirmations: 0,
+        classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+      });
+      const result = await scanUnit(UNIT, ports, {
+        maxIndexPerChain: 60,
+        burnedChangeCount: 3,
+        localChangeClaims: [changeClaim(2, role)],
+      });
+      expect(result).toMatchObject({ ok: true });
+      expect(result.utxos[0]).toMatchObject({
+        height: null,
+        walletCreatedChange: true,
+        facts: { primaryClass: 'unknown', confidence: 'degraded' },
+      });
+    },
+  );
+
+  it('does not promote payment change when classification carries a rare-sat signal', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+      classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+      mutateClassify: (body) => ({
+        ...body,
+        classifications: body.classifications.map((classification) => ({
+          ...classification,
+          satRanges: [{ start: '0', end: '1', rarity: 'uncommon' as const }],
+        })),
+      }),
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [changeClaim(2)],
+    });
+    expect(result.utxos[0]?.facts).toMatchObject({
+      primaryClass: 'unknown',
+      confidence: 'degraded',
+    });
+  });
+
+  it('keeps an unconfirmed asset-classification degraded for an asset claim', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+      classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [changeClaim(2, 'ordinal_change')],
+    });
+    expect(result.utxos[0]?.facts).toMatchObject({
+      primaryClass: 'unknown',
+      confidence: 'degraded',
+    });
+  });
+
+  it('fails closed when an exact claim disagrees with the observed value or script', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [changeClaim(2, 'payment_change', 9_999n)],
+    });
+    expect(result).toMatchObject({ ok: false, failure: 'conflicting_sources' });
+    expect(result.utxos).toEqual([]);
+  });
+
+  it('leaves an unclaimed incoming mempool output unspendable', async () => {
+    const { ports } = makePorts({
+      activeExt: [2], activeInt: [], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+      classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+    });
+    expect(result.utxos[0]).toMatchObject({
+      chain: 0,
+      height: null,
+      walletCreatedChange: false,
+      facts: { primaryClass: 'unknown', confidence: 'degraded' },
+    });
+  });
+
+  it('does not bless an unmatched mempool output even if its gateway fact is clean', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [],
+    });
+    expect(result.utxos[0]).toMatchObject({
+      chain: 1,
+      height: null,
+      walletCreatedChange: true,
+      facts: { primaryClass: 'unknown', confidence: 'degraded' },
+    });
+  });
+
+  it('preserves the legacy authoritative result when a caller has no local-claim channel', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+    });
+    expect(result.utxos[0]).toMatchObject({
+      chain: 1,
+      height: null,
+      walletCreatedChange: true,
+      facts: { primaryClass: 'cardinal_clean', confidence: 'authoritative' },
+    });
+  });
+
+  it('preserves confirmed gateway facts even when a payment claim is present', async () => {
+    const inscription = { inscriptionId: `${'c'.repeat(64)}i0`, satpoint: `${txidAt(2)}:0:0` };
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2], fundingSpendsOnlyRequested: true,
+      classifyPrimaryClass: 'inscribed', classifyInscriptions: [inscription],
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 3,
+      localChangeClaims: [changeClaim(2)],
+    });
+    expect(result.utxos[0]?.facts).toMatchObject({
+      primaryClass: 'inscribed',
+      confidence: 'authoritative',
+      inscriptions: [inscription],
+    });
+  });
+
+  it('accepts exact claims for replacement and CPFP outputs independently', async () => {
+    const { ports } = makePorts({
+      activeExt: [], activeInt: [2, 3], fundingSpendsOnlyRequested: true,
+      snapshotHeights: [null], classifyConfirmations: 0,
+      classifyPrimaryClass: 'unknown', classifyConfidence: 'degraded',
+    });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: 4,
+      // Each claim represents the exact output of a different local plan:
+      // replacement output followed by a CPFP child output.
+      localChangeClaims: [changeClaim(2), changeClaim(3)],
+    });
+    expect(result.utxos).toHaveLength(2);
+    expect(result.utxos.every((utxo) =>
+      utxo.walletCreatedChange && utxo.facts?.primaryClass === 'cardinal_clean' &&
+      utxo.facts.confidence === 'authoritative')).toBe(true);
+  });
+
+  it.each([
+    [19, 19, 40, false],
+    [20, 19, 40, false],
+    [59, 58, 79, true],
+    [60, 59, 80, true],
+  ])('keeps change discovery at the %i/%i boundary', async (burned, active, firstRound, boundaryPrompt) => {
+    const { ports, snapshotRequests } = makePorts({ activeExt: [], activeInt: [active] });
+    const result = await scanUnit(UNIT, ports, {
+      maxIndexPerChain: 60,
+      burnedChangeCount: burned,
+    });
+    expect(result).toMatchObject({ ok: true, boundaryPrompt });
+    expect(result.utxos[0]).toMatchObject({ chain: 1, addressIndex: active });
+    expect(snapshotRequests[0]).toHaveLength(firstRound);
   });
 
   it('widens the window while activity sits within the gap limit', async () => {

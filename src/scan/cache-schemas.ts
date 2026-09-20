@@ -67,6 +67,7 @@ const storedUtxoShape = {
     addressIndex: z.number().int().nonnegative(),
     height: z.number().int().nonnegative().nullable(),
     walletCreatedChange: z.boolean(),
+    recoveryOnly: z.boolean().optional(),
     facts: assetFactsSchema.nullable(),
     flags: z.object({ userFrozen: z.boolean(), dustQuarantined: z.boolean() }).strict(),
 } as const;
