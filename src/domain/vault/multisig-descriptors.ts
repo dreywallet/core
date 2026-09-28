@@ -267,6 +267,29 @@ export function assertVaultDescriptorPolicy(policy: VaultPolicyIdentityV1): void
   }
 }
 
+// Every derivation re-proves the whole policy (xpubs, both descriptors and
+// their checksums, the policy id): about 14 ms, repeated per address on scans
+// and several times per input when signing. The proof is a pure function of
+// the policy's content, so recent successes are remembered by exact content.
+const VERIFIED_POLICY_LIMIT = 8;
+const verifiedPolicies = new Set<string>();
+
+function assertVaultDescriptorPolicyCached(policy: VaultPolicyIdentityV1): void {
+  let key: string;
+  try {
+    key = JSON.stringify(policy);
+  } catch {
+    assertVaultDescriptorPolicy(policy);
+    return;
+  }
+  if (verifiedPolicies.has(key)) return;
+  assertVaultDescriptorPolicy(policy);
+  if (verifiedPolicies.size >= VERIFIED_POLICY_LIMIT) {
+    verifiedPolicies.delete(verifiedPolicies.values().next().value!);
+  }
+  verifiedPolicies.add(key);
+}
+
 function deriveExactChild(parent: HDKey, index: number, label: string): HDKey {
   const child = parent.deriveChild(index);
   // @scure follows BIP32's astronomically rare invalid-child retry. A policy
@@ -282,7 +305,7 @@ export function deriveVaultOutput(
   index: number,
 ): VaultDerivedOutputV1 {
   assertBip32Index(index, 'Vault derivation index');
-  assertVaultDescriptorPolicy(policy);
+  assertVaultDescriptorPolicyCached(policy);
   const chain = branch === 'receive' ? 0 : 1;
   const logicalKeys = policy.signers.map((signer) => {
     const account = HDKey.fromExtendedKey(signer.accountXpub, bip32Versions(policy.network));

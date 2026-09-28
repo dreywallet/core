@@ -187,9 +187,14 @@ function assertInputShape(plan: CommunityVaultAcquisitionPlanV1, policy: Communi
       if (plan.source === 'listed' && input.ownerId !== null) {
         throw new Error('listed inscription input must remain external to the cap table');
       }
-      const allowed = plan.source === 'listed'
-        ? [SigHash.DEFAULT, SigHash.ALL, SIGHASH_SINGLE_ANYONECANPAY]
-        : [SigHash.DEFAULT, SigHash.ALL];
+      // SIGHASH_DEFAULT (0x00) exists only for Taproot. On a segwit v0 input
+      // it is an undefined hash type that relay policy (STRICTENC) rejects,
+      // so the finished transaction could never propagate.
+      const allowed = [
+        ...(input.scriptKind === 'p2tr' ? [SigHash.DEFAULT] : []),
+        SigHash.ALL,
+        ...(plan.source === 'listed' ? [SIGHASH_SINGLE_ANYONECANPAY] : []),
+      ];
       if (!allowed.includes(input.sighashType)) throw new Error('unsafe inscription-input sighash');
     } else {
       if (input.ownerId === null || !policy.owners.some((owner) => owner.ownerId === input.ownerId)) {

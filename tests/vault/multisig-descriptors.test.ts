@@ -304,4 +304,13 @@ describe('ADR 0007 B1 complete-policy ownership', () => {
     malformed.logicalKeys[0].publicKeyHex = '03zz';
     expect(verifyVaultOwnership(policy, malformed)).toBe(false);
   });
+
+  it('still rejects a tampered policy after an identical valid one was derived from', () => {
+    const policy = b0.records.mainnet.policy;
+    expect(deriveVaultOutput(policy, 'receive', 0).policyId).toBe(policy.policyId);
+    const tampered = clone(policy);
+    tampered.policyId = 'ff'.repeat(32);
+    expect(() => deriveVaultOutput(tampered, 'receive', 0)).toThrow();
+    expect(deriveVaultOutput(policy, 'receive', 1).index).toBe(1);
+  });
 });

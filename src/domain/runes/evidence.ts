@@ -66,6 +66,16 @@ export interface RuneHolding extends RuneBalance {
   reserved: string;
   constrained: Array<{ reason: RuneUnavailableReason; amount: string }>;
 }
+/** Bounded, data-free failure categories so callers can report why evidence
+ * was refused without logging outpoints, scripts, or amounts. */
+export type RuneEvidenceFailure = 'scan_incomplete' | 'account_mismatch' | 'invalid_response' | 'clock_skew' |
+  'source_mismatch' | 'unknown_outpoints' | 'binding_mismatch' | 'classification_mismatch' | 'incomplete_evidence';
+export class RuneEvidenceError extends Error {
+  constructor(readonly reason: RuneEvidenceFailure, message: string) {
+    super(message);
+    this.name = 'RuneEvidenceError';
+  }
+}
 const bindings = new WeakMap<object, { identity: string; boundAt: number; expiresAt: number; contents: string }>();
 function evidenceIdentity(context: RuneEvidenceContext): string {
   return JSON.stringify([context.network, context.accountId, context.instanceId,
@@ -79,6 +89,14 @@ export function assertBoundRuneEvidence(evidence: ReadonlyMap<string, RuneOutput
       !Number.isSafeInteger(context.nowMs) || context.nowMs < binding.boundAt || context.nowMs > binding.expiresAt ||
       JSON.stringify([...evidence]) !== binding.contents) throw new Error('Rune evidence authority expired or changed');
 }
+/** ord indexes only confirmed outputs, so the gateway reports every unconfirmed
+ * output as incomplete with no balances. Such an output binds as unknown
+ * content: runeInputUnavailable() reports it as 'incomplete' and funding
+ * requires confirmation, so it can never be selected. Confirmed outputs must
+ * remain complete. */
+function incompleteAllowed(utxo: WalletUtxo, output: RuneOutput): boolean {
+  return output.complete || (utxo.height === null && output.confirmations === 0 && output.balances.length === 0);
+}
 /** Only call after envelope signature verification. Joins every requested output,
  * including non-runic outputs, so truncated evidence cannot authorize selection. */
 export function bindRuneEvidence(
@@ -86,32 +104,41 @@ export function bindRuneEvidence(
 ): ReadonlyMap<string, RuneOutput> {
   if (!context.scanComplete || !Number.isSafeInteger(context.nowMs) ||
       !context.accountId.startsWith(`acct_${context.network}_`) || utxos.length > 10_000 ||
-      responses.length < 1 || responses.length > 50) throw new Error('incomplete Rune scan');
+      responses.length < 1 || responses.length > 50) throw new RuneEvidenceError('scan_incomplete', 'incomplete Rune scan');
   const expected = new Map(utxos.map((utxo) => [outpointKey(utxo.outpoint), utxo]));
-  if (expected.size !== utxos.length || utxos.some((utxo) => utxo.accountId !== context.accountId)) throw new Error('Rune account mismatch');
+  if (expected.size !== utxos.length || utxos.some((utxo) => utxo.accountId !== context.accountId)) {
+    throw new RuneEvidenceError('account_mismatch', 'Rune account mismatch');
+  }
   const result = new Map<string, RuneOutput>();
   for (const raw of responses) {
-    const response = runeOutputsResponseSchema.parse(raw);
+    const parsed = runeOutputsResponseSchema.safeParse(raw);
+    if (!parsed.success) throw new RuneEvidenceError('invalid_response', 'invalid Rune evidence response');
+    const response = parsed.data;
     const age = context.nowMs - Date.parse(response.timestamp);
-    if (age < -30_000 || age > 30_000 || response.network !== context.network ||
+    if (!(age >= -30_000 && age <= 30_000)) throw new RuneEvidenceError('clock_skew', 'stale or incomplete Rune evidence');
+    if (response.network !== context.network ||
         response.instanceId !== context.instanceId || response.classificationRevision !== context.classificationRevision ||
-        response.coreTip.hash !== context.tip.hash || response.coreTip.height !== context.tip.height ||
-        response.unknownOutpoints.length !== 0) throw new Error('stale or incomplete Rune evidence');
+        response.coreTip.hash !== context.tip.hash || response.coreTip.height !== context.tip.height) {
+      throw new RuneEvidenceError('source_mismatch', 'stale or incomplete Rune evidence');
+    }
+    if (response.unknownOutpoints.length !== 0) throw new RuneEvidenceError('unknown_outpoints', 'stale or incomplete Rune evidence');
     for (const output of response.outputs) {
       const key = outpointKey(output); const utxo = expected.get(key);
       if (!utxo || result.has(key) || output.scriptPubKey !== utxo.scriptPubKey ||
-          BigInt(output.valueSats) !== utxo.valueSats || !output.complete ||
+          BigInt(output.valueSats) !== utxo.valueSats || !incompleteAllowed(utxo, output) ||
           (utxo.height === null ? output.confirmations !== 0 : output.confirmations !== context.tip.height - utxo.height + 1)) {
-        throw new Error('Rune output binding mismatch');
+        throw new RuneEvidenceError('binding_mismatch', 'Rune output binding mismatch');
       }
       if (utxo.height !== null && (utxo.facts === null || utxo.facts.confidence !== 'authoritative' ||
           utxo.facts.classifiedTip.hash !== context.tip.hash || utxo.facts.classifiedTip.height !== context.tip.height ||
           utxo.facts.classificationRevision !== context.classificationRevision ||
-          utxo.facts.unsupportedAssetDetected !== (output.balances.length > 0))) throw new Error('Rune classification mismatch');
+          utxo.facts.unsupportedAssetDetected !== (output.balances.length > 0))) {
+        throw new RuneEvidenceError('classification_mismatch', 'Rune classification mismatch');
+      }
       result.set(key, output);
     }
   }
-  if (result.size !== expected.size) throw new Error('incomplete Rune evidence');
+  if (result.size !== expected.size) throw new RuneEvidenceError('incomplete_evidence', 'incomplete Rune evidence');
   bindings.set(result, { identity: evidenceIdentity(context), boundAt: context.nowMs,
     expiresAt: Math.min(context.nowMs + 30_000, ...responses.map((response) => Date.parse(response.timestamp) + 30_000)),
     contents: JSON.stringify([...result]) });
@@ -162,6 +189,13 @@ export function projectRuneHoldings(
     }
   }
   return [...holdings.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+/** Bound unconfirmed outputs whose Rune content is not yet known. Any Runes
+ * they carry are absent from projectRuneHoldings until they confirm. */
+export function unconfirmedRuneOutputCount(evidence: ReadonlyMap<string, RuneOutput>): number {
+  let count = 0;
+  for (const output of evidence.values()) if (!output.complete) count++;
+  return count;
 }
 // Explicitly exported for request/response identity consumers.
 export const runeTxidSchema = hexIdSchema;

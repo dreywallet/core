@@ -106,7 +106,10 @@ function assertCurrent(current: RuneTransferCurrent): void {
     const evidenceRaw = evidence.get(key);
     const output = evidenceRaw ? runeOutputSchema.parse(evidenceRaw) : undefined;
     if (!output || seen.has(key) || utxo.accountId !== context.accountId || utxo.account !== publicAccount.derivationAccountIndex ||
-      output.txid !== utxo.outpoint.txid || output.vout !== utxo.outpoint.vout || !output.complete ||
+      output.txid !== utxo.outpoint.txid || output.vout !== utxo.outpoint.vout ||
+      // Unconfirmed outputs bind incomplete (see bindRuneEvidence); they are
+      // never Rune candidates ('incomplete') nor funding (confirmation required).
+      (!output.complete && (utxo.height !== null || output.balances.length !== 0)) ||
       output.scriptPubKey !== utxo.scriptPubKey || BigInt(output.valueSats) !== utxo.valueSats ||
       output.confirmations !== (utxo.height === null ? 0 : context.tip.height - utxo.height + 1)) throw new Error('Rune evidence changed');
     if (utxo.height !== null && (!utxo.facts || utxo.facts.confidence !== 'authoritative' ||

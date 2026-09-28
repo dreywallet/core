@@ -15,6 +15,12 @@ import { deriveVaultOutput } from './multisig-descriptors';
 
 const VAULT_SCAN_UNIT: ScanUnit = { source: 'standard', account: 0, lane: 'payment' };
 export const VAULT_MAX_INDEX_PER_BRANCH = 40;
+/**
+ * Hard bound on automatic widening, so a scan always terminates and a gateway
+ * reporting every address as used cannot stall the client: 160 withdrawals per
+ * coordinator, eight times the default bound.
+ */
+export const VAULT_SCAN_INDEX_CEILING = 320;
 
 export function vaultScriptHashes(
   policy: VaultPolicyIdentityV1,
@@ -58,6 +64,7 @@ export async function scanVaultPolicy(input: {
     throw new Error('Vault policy network differs from scan network');
   }
   let envelope: VaultScanOutcome['source'] = null;
+  const derived = new Map<string, IndexedScriptHash>();
   const ports: ScanUnitPorts = {
     network: input.network,
     snapshot: async (request) => {
@@ -76,13 +83,36 @@ export async function scanVaultPolicy(input: {
       return response;
     },
     classify: (request) => input.gateway.classifyOutpoints(request),
-    hashesFor: (_unit, chain, from, to) => vaultScriptHashes(input.policy, chain, from, to),
+    // Each widening pass rescans from index zero; derive every address once.
+    hashesFor: (_unit, chain, from, to) => {
+      const hashes: IndexedScriptHash[] = [];
+      for (let index = from; index < to; index += 1) {
+        const key = `${chain}:${index}`;
+        let hash = derived.get(key);
+        if (hash === undefined) {
+          hash = vaultScriptHashes(input.policy, chain, index, index + 1)[0]!;
+          derived.set(key, hash);
+        }
+        hashes.push(hash);
+      }
+      return hashes;
+    },
     shouldCancel: input.shouldCancel ?? (() => false),
   };
 
-  const result = await scanUnit(VAULT_SCAN_UNIT, ports, {
-    maxIndexPerChain: input.maxIndexPerBranch ?? VAULT_MAX_INDEX_PER_BRANCH,
-    burnedChangeCount: input.burnedChangeCount ?? 0,
-  });
-  return { result, source: envelope };
+  let cap = Math.min(input.maxIndexPerBranch ?? VAULT_MAX_INDEX_PER_BRANCH, VAULT_SCAN_INDEX_CEILING);
+  for (;;) {
+    const result = await scanUnit(VAULT_SCAN_UNIT, ports, {
+      maxIndexPerChain: cap,
+      burnedChangeCount: input.burnedChangeCount ?? 0,
+    });
+    // Change moves to ever-higher indexes, split between two coordinators that
+    // cannot see each other's counters. Activity within the gap of the bound
+    // means more may lie beyond it: widen and rescan instead of silently
+    // leaving those funds out of balances and planning.
+    if (!result.ok || !result.boundaryPrompt || cap >= VAULT_SCAN_INDEX_CEILING) {
+      return { result, source: envelope };
+    }
+    cap = Math.min(cap * 2, VAULT_SCAN_INDEX_CEILING);
+  }
 }

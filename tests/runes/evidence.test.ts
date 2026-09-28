@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertBoundRuneEvidence, bindRuneEvidence, projectRuneHoldings, runeInputUnavailable, runeOutputsResponseSchema, runeIdSchema, runeAtomicSchema, type RuneOutputsResponse } from '../../src/domain/runes/evidence';
+import { assertBoundRuneEvidence, bindRuneEvidence, projectRuneHoldings, runeInputUnavailable, runeOutputsResponseSchema, runeIdSchema, runeAtomicSchema, RuneEvidenceError, unconfirmedRuneOutputCount, type RuneEvidenceFailure, type RuneOutputsResponse } from '../../src/domain/runes/evidence';
 import type { WalletUtxo } from '../../src/domain/classification/types';
 const hash = 'a'.repeat(64);
 const accountId = `acct_regtest_${hash}`;
@@ -100,5 +100,68 @@ describe('Rune authority boundary regression checks', () => {
     const { utxo, response } = fixture();
     utxo.facts!.satRanges = [{ start: '0', end: '10001', rarity: 'common' }, { start: '2', end: '1', rarity: 'common' }];
     expect(runeInputUnavailable(utxo, response.outputs[0]!, '10:1', new Set())).toBe('mixed_assets');
+  });
+});
+
+// Production gateway shape: ord indexes only confirmed outputs, so every
+// unconfirmed output arrives as { complete: false, confirmations: 0, balances: [] }.
+function withPending(lane: 'payment' | 'ordinals' = 'payment') {
+  const base = fixture();
+  const pending: WalletUtxo = { ...structuredClone(base.utxo), outpoint: { txid: 'c'.repeat(64), vout: 0 }, lane, height: null,
+    walletCreatedChange: lane === 'payment', facts: { primaryClass: 'unknown', confidence: 'degraded', unsupportedAssetDetected: false,
+      inscriptions: [], satRanges: null, classifiedTip: tip, classificationRevision: 'r1' } };
+  base.response.outputs.push({ ...pending.outpoint, scriptPubKey: pending.scriptPubKey, valueSats: '10000',
+    confirmations: 0, complete: false, balances: [] });
+  return { ...base, pending };
+}
+describe('unconfirmed outputs reported incomplete', () => {
+  it.each(['payment', 'ordinals'] as const)('bind a pending %s output as unknown content without hiding confirmed balances', (lane) => {
+    const { utxo, pending, response, context } = withPending(lane);
+    const evidence = bindRuneEvidence([utxo, pending], [response], context);
+    expect(() => assertBoundRuneEvidence(evidence, context)).not.toThrow();
+    const holdings = projectRuneHoldings([utxo, pending], evidence, new Set());
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]).toMatchObject({ total: '9007199254740993', available: '9007199254740993', constrained: [] });
+    expect(unconfirmedRuneOutputCount(evidence)).toBe(1);
+    expect(runeInputUnavailable(pending, evidence.get(`${'c'.repeat(64)}:0`)!, '10:1', new Set())).toBe('incomplete');
+  });
+  it('reports no unconfirmed outputs when every output is complete', () => {
+    const { utxo, response, context } = fixture();
+    expect(unconfirmedRuneOutputCount(bindRuneEvidence([utxo], [response], context))).toBe(0);
+  });
+  it.each(['confirmed', 'confirmations', 'balances'] as const)('still refuses an incomplete output that is not a plain pending output: %s', (mutation) => {
+    const { utxo, pending, response, context } = withPending();
+    const output = response.outputs[1]!;
+    if (mutation === 'confirmed') { pending.height = tip.height; output.confirmations = 1; }
+    if (mutation === 'confirmations') output.confirmations = 1;
+    // The response schema already refuses balances on incomplete evidence;
+    // the binder must refuse them too if handed an unparsed object.
+    if (mutation === 'balances') output.balances = [{ id: '10:1', name: 'TEST•RUNE', amount: '1', divisibility: 8, symbol: null }];
+    expect(() => bindRuneEvidence([utxo, pending], [response], context)).toThrow(RuneEvidenceError);
+  });
+  it('still refuses an incomplete confirmed output even when the wallet holds nothing else', () => {
+    const { utxo, response, context } = fixture(); response.outputs[0]!.complete = false; response.outputs[0]!.balances = [];
+    expect(() => bindRuneEvidence([utxo], [response], context)).toThrow('Rune output binding mismatch');
+  });
+});
+describe('Rune evidence failure reasons', () => {
+  it.each([
+    ['scan_incomplete', ({ context }) => { context.scanComplete = false; }],
+    ['account_mismatch', ({ utxo }) => { utxo.accountId = `acct_regtest_${'b'.repeat(64)}`; }],
+    ['invalid_response', ({ response }) => { (response as { runeProtocol: string }).runeProtocol = 'other'; }],
+    ['clock_skew', ({ context }) => { context.nowMs += 30001; }],
+    ['clock_skew', ({ context }) => { context.nowMs -= 30001; }],
+    ['source_mismatch', ({ context }) => { context.tip = { height: 20, hash: 'b'.repeat(64) }; }],
+    ['source_mismatch', ({ context }) => { context.classificationRevision = 'r2'; }],
+    ['unknown_outpoints', ({ response, utxo }) => { response.outputs = []; response.unknownOutpoints = [utxo.outpoint]; }],
+    ['binding_mismatch', ({ response }) => { response.outputs[0]!.valueSats = '9999'; }],
+    ['classification_mismatch', ({ utxo }) => { utxo.facts!.unsupportedAssetDetected = false; }],
+    ['incomplete_evidence', ({ response }) => { response.outputs = []; }],
+  ] as Array<[RuneEvidenceFailure, (f: ReturnType<typeof fixture>) => void]>)('reports %s', (reason, mutate) => {
+    const f = fixture(); mutate(f);
+    let caught: unknown;
+    try { bindRuneEvidence([f.utxo], [f.response], f.context); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(RuneEvidenceError);
+    expect((caught as RuneEvidenceError).reason).toBe(reason);
   });
 });

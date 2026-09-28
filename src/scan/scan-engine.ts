@@ -381,9 +381,12 @@ async function scanUnitOnce(
       }
     }
 
+    // A round truncated at the wire cap left part of its target unfetched.
+    // Keep that target so the next round covers it; recomputing from the gap
+    // alone would drop burned change indexes that were never requested.
     nextTargets = {
-      0: nextWindowEnd(windows[0], cap) ?? windows[0].to,
-      1: nextWindowEnd(windows[1], cap) ?? windows[1].to,
+      0: Math.max(nextTargets[0], nextWindowEnd(windows[0], cap) ?? windows[0].to),
+      1: Math.max(nextTargets[1], nextWindowEnd(windows[1], cap) ?? windows[1].to),
     };
   }
 

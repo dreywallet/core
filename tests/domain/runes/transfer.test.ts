@@ -5,7 +5,7 @@ import type { WalletUtxo } from '../../../src/domain/classification/types';
 import { mnemonicToSeed } from '../../../src/domain/keys/mnemonic';
 import { installTestCryptoProvider } from '../../helpers/install-crypto-provider';
 import { assertRuneTransferPlan, buildRuneTransferPlan, hashRuneTransferPlan, signRuneTransferPlan, validateRuneTransferRaw, type RuneTransferPlan, type RuneTransferRequest } from '../../../src/domain/runes/transfer';
-import { bindRuneEvidence, type RuneOutput } from '../../../src/domain/runes/evidence';
+import { bindRuneEvidence, RuneEvidenceError, type RuneOutput } from '../../../src/domain/runes/evidence';
 import { evaluateRuneAllocations } from '../../../src/domain/runes/protocol';
 
 const seed = mnemonicToSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
@@ -44,6 +44,47 @@ function mutated(plan: RuneTransferPlan, change: (plan: RuneTransferPlan) => voi
 }
 function rawBytes(hex: string): Uint8Array { return Uint8Array.from(hex.match(/../g) ?? [], byte => parseInt(byte, 16)); }
 function hex(bytes: Uint8Array): string { return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''); }
+
+describe('Rune transfer with unconfirmed wallet outputs', () => {
+  // Production gateway shape for any mempool output. The payment output is
+  // wallet change, which ordinary eligibility may treat as spendable.
+  function withPending(): RuneTransferRequest {
+    const request = fixture();
+    for (const [index, lane] of (['payment', 'ordinals'] as const).entries()) {
+      const derived = derivePublicAccountAddress(account, lane, 1, 5 + index);
+      const outpoint = { txid: String(index + 7).repeat(64), vout: 0 };
+      const valueSats = lane === 'payment' ? 50000n : 546n;
+      request.utxos = [...request.utxos, { outpoint, valueSats, scriptPubKey: derived.scriptPubKeyHex, accountId: account.accountId, account: 0, lane, chain: 1,
+        addressIndex: 5 + index, height: null, walletCreatedChange: lane === 'payment', flags: { userFrozen: false, dustQuarantined: false },
+        // Real scan facts: proven own payment change (paymentChangeFacts) is
+        // authoritative clean; any other mempool output is degraded/unknown.
+        facts: lane === 'payment'
+          ? { primaryClass: 'cardinal_clean', inscriptions: [], satRanges: null, unsupportedAssetDetected: false, detectedAssets: [], detectedAssetCount: 0,
+            assetIdentityComplete: true, confidence: 'authoritative', classifiedTip: tip, classificationRevision: 'rev-runes' }
+          : { primaryClass: 'unknown', inscriptions: [], satRanges: null, unsupportedAssetDetected: false,
+            confidence: 'degraded', classifiedTip: tip, classificationRevision: 'rev-runes' } }];
+      (request.evidence as Map<string, RuneOutput>).set(`${outpoint.txid}:0`, { ...outpoint, valueSats: valueSats.toString(),
+        scriptPubKey: derived.scriptPubKeyHex, confirmations: 0, complete: false, balances: [] });
+    }
+    return rebind(request);
+  }
+  it('plans, signs, and validates without ever selecting an unconfirmed output', () => {
+    for (const amount of ['400', 'max']) {
+      const request = { ...withPending(), amount }; const plan = buildRuneTransferPlan(request);
+      const pending = new Set([`${'7'.repeat(64)}:0`, `${'8'.repeat(64)}:0`]);
+      expect(plan.inputs.some(input => pending.has(`${input.txid}:${input.vout}`))).toBe(false);
+      expect(() => assertRuneTransferPlan(plan, request)).not.toThrow();
+      const signed = signRuneTransferPlan(plan, seed, size => new Uint8Array(size).fill(7), request);
+      expect(validateRuneTransferRaw(plan, signed.transactionHex, request)).toEqual(signed);
+    }
+  });
+  it('still refuses incomplete evidence for a confirmed output', () => {
+    const request = fixture();
+    const evidence = request.evidence.get(`${'5'.repeat(64)}:0`)!;
+    (request.evidence as Map<string, RuneOutput>).set(`${'5'.repeat(64)}:0`, { ...evidence, complete: false });
+    expect(() => rebind(request)).toThrow(RuneEvidenceError);
+  });
+});
 
 describe('native Rune transfer policy and signer', () => {
   it('plans and signs a partial transfer with exact Rune and Bitcoin change', () => {

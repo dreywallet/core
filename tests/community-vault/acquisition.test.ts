@@ -297,6 +297,10 @@ describe('Community Vault listed acquisition profile', () => {
     expect(mutate((copy) => { copy.listedTerms!.listingFingerprintHex = 'ef'.repeat(32); })).toThrow(/digest/u);
     expect(mutate((copy) => { copy.listedTerms!.maximumLandedCostSats = '103999'; })).toThrow(/maximum/u);
     expect(mutate((copy) => { copy.outputs[1]!.valueSats = '99999'; })).toThrow();
+    // 0x00 is Taproot-only; on this P2WPKH listing input it would never relay.
+    expect(plan.inputs[plan.assetInputIndex]!.scriptKind).toBe('p2wpkh');
+    expect(mutate((copy) => { copy.inputs[copy.assetInputIndex]!.sighashType = 0; }))
+      .toThrow(/unsafe inscription-input sighash/u);
 
     const stale = preflight(plan);
     expect(() => assertCommunityVaultAcquisitionPreflight({

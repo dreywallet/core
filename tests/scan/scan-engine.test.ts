@@ -474,6 +474,16 @@ describe('scan engine (§8.2)', () => {
     expect(snapshotRequests[0]).toHaveLength(firstRound);
   });
 
+  it('fetches every burned change index even when it exceeds one request', async () => {
+    // 250 burned change indexes plus 20 external ones cannot fit the
+    // 200-hash wire cap in one round; the remainder must still be requested.
+    const { ports, snapshotRequests } = makePorts({ activeExt: [], activeInt: [240] });
+    const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 300, burnedChangeCount: 250 });
+    expect(result.ok).toBe(true);
+    expect(result.utxos.map((utxo) => [utxo.chain, utxo.addressIndex])).toEqual([[1, 240]]);
+    expect(snapshotRequests.reduce((sum, round) => sum + round.length, 0)).toBeGreaterThanOrEqual(270);
+  });
+
   it('widens the window while activity sits within the gap limit', async () => {
     const { ports, snapshotRequests } = makePorts({ activeExt: [18] });
     const result = await scanUnit(UNIT, ports, { maxIndexPerChain: 60, burnedChangeCount: 0 });

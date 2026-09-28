@@ -348,6 +348,30 @@ export function assertPublicAccountDefinition(definition: PublicAccountDefinitio
   }
 }
 
+// Validating a definition decodes every descriptor and xpub, which dominated
+// per-address derivation (a Rune transfer or inscription listing derives one
+// address per input). Validation is a pure function of the definition's
+// content, so recent successes are remembered by their exact serialization.
+const VALIDATED_DEFINITION_LIMIT = 32;
+const validatedDefinitions = new Map<string, PublicAccountDefinitionV1>();
+
+function validatedDefinition(input: PublicAccountDefinitionV1): PublicAccountDefinitionV1 {
+  let key: string;
+  try {
+    key = JSON.stringify(input);
+  } catch {
+    return publicAccountDefinitionSchema.parse(input);
+  }
+  const cached = validatedDefinitions.get(key);
+  if (cached !== undefined) return cached;
+  const parsed = publicAccountDefinitionSchema.parse(input);
+  if (validatedDefinitions.size >= VALIDATED_DEFINITION_LIMIT) {
+    validatedDefinitions.delete(validatedDefinitions.keys().next().value!);
+  }
+  validatedDefinitions.set(key, parsed);
+  return parsed;
+}
+
 /** Derive one receive/change address from the account's public definition only. */
 export function derivePublicAccountAddress(
   definitionInput: PublicAccountDefinitionV1,
@@ -356,7 +380,7 @@ export function derivePublicAccountAddress(
   index: number,
 ): DerivedPublicAccountAddress {
   assertBip32Index(index, 'address index');
-  const definition = publicAccountDefinitionSchema.parse(definitionInput);
+  const definition = validatedDefinition(definitionInput);
   const laneDefinition = definition.lanes[lane];
   const descriptor = parsePublicDescriptor(
     chain === 0 ? laneDefinition.receiveDescriptor : laneDefinition.changeDescriptor,

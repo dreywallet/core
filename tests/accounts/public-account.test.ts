@@ -185,4 +185,14 @@ describe('closed public account descriptors', () => {
     expect(canonicalPublicDescriptor('payment', 'mainnet', 3, origin, 0))
       .toBe(definition.lanes.payment.receiveDescriptor);
   });
+
+  it('still rejects a tampered definition after an identical valid one was derived from', () => {
+    const { definition } = descriptors();
+    expect(derivePublicAccountAddress(definition, 'payment', 0, 0).accountId).toBe(definition.accountId);
+    const tampered = structuredClone(definition);
+    tampered.accountId = `acct_signet_${'00'.repeat(32)}` as typeof definition.accountId;
+    expect(() => derivePublicAccountAddress(tampered, 'payment', 0, 0)).toThrow();
+    // The genuine definition keeps deriving after the rejection.
+    expect(derivePublicAccountAddress(definition, 'payment', 0, 1).index).toBe(1);
+  });
 });
